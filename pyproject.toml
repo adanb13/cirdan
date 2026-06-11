@@ -48,7 +48,9 @@ cirdan = "cirdan.cli.main:app"
 cirdand = "cirdan.cli.main:daemon_app"
 
 [project.urls]
-Homepage = "https://github.com/cirdan-ai/cirdan"
+Homepage = "https://github.com/adanb13/cirdan"
+Repository = "https://github.com/adanb13/cirdan"
+Issues = "https://github.com/adanb13/cirdan/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cirdan"]
