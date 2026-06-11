@@ -33,6 +33,9 @@ EOF
     ;;
   "inspect compose-app-api-1")
     echo '[{"Id":"aaa111","RestartCount":0,"State":{"Status":"running","Health":{"Status":"healthy"},"StartedAt":"2026-06-11T10:00:00Z","ExitCode":0}}]' ;;
+  "events --format {{json .}}")
+    echo '{"Type":"container","Action":"die","Actor":{"Attributes":{"name":"compose-app-api-1","com.docker.compose.service":"api","exitCode":"1"}}}'
+    sleep 5 ;;
   logs*)
     echo "INFO ready"
     echo "ERROR database connection refused" ;;

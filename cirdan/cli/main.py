@@ -268,6 +268,89 @@ def verify(
 
 
 @app.command()
+def watch(
+    path: str = typer.Argument(".", help="Project root."),
+):
+    """Foreground live view: stream runtime events and incident changes (Ctrl-C to stop)."""
+    import asyncio
+
+    from cirdan.daemon import CirdanDaemon
+    from cirdan.engine import CirdanEngine
+
+    engine = CirdanEngine.open(path)
+
+    def on_event(item: dict) -> None:
+        if item["kind"] == "event":
+            ev = item["event"]
+            color = {"error": "red", "warning": "yellow"}.get(ev["severity"], "dim")
+            console.print(f"[{color}]●[/{color}] [dim]{ev['ts']}[/dim] "
+                          f"{ev['provider']} {ev['resource']} — {ev['message'][:160]}")
+        elif item["kind"] == "incident":
+            inc = item["incident"]
+            console.print(f"[bold red]incident[/bold red] {inc['id']} [{inc['status']}] {inc['title']}")
+
+    daemon = CirdanDaemon(engine, on_event=on_event)
+    console.print("[bold]cirdan watch[/bold] — streaming events; Ctrl-C to stop.")
+
+    async def _run():
+        await daemon.run_forever()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\nstopped.")
+
+
+@daemon_app.command("serve")
+def daemon_serve(
+    path: str = typer.Argument(".", help="Project root."),
+    config: str = typer.Option(None, "--config", help="Path to cirdan.yaml."),
+    mcp: bool = typer.Option(False, "--mcp", help="Also serve MCP."),
+    http: bool = typer.Option(False, "--http", help="Also serve the HTTP API."),
+    host: str = typer.Option(None, "--host"),
+    port: int = typer.Option(None, "--port"),
+):
+    """Run the Always ON daemon: watch, refresh, detect, export — until stopped."""
+    import asyncio
+
+    from cirdan.daemon import CirdanDaemon
+    from cirdan.engine import CirdanEngine
+
+    engine = CirdanEngine.open(path, config_file=config)
+    if host:
+        engine.config.daemon.host = host
+    if port:
+        engine.config.daemon.port = port
+    daemon = CirdanDaemon(engine)
+
+    async def _run():
+        await daemon.start()
+        extras = []
+        if http:
+            from cirdan.api.http import serve_http
+
+            extras.append(asyncio.create_task(
+                serve_http(engine, mcp=mcp,
+                           host=engine.config.daemon.host, port=engine.config.daemon.port)
+            ))
+        elif mcp:
+            from cirdan.mcp.server import run_stdio
+
+            extras.append(asyncio.create_task(run_stdio(engine)))
+        try:
+            await asyncio.gather(*extras) if extras else await asyncio.Event().wait()
+        finally:
+            await daemon.stop()
+
+    console.print(f"[bold]cirdand[/bold] serving (root={engine.config.root_path}, "
+                  f"mcp={mcp}, http={http}); Ctrl-C to stop.")
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("\nstopped.")
+
+
+@app.command()
 def access(
     path: str = typer.Argument(".", help="Project root."),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),

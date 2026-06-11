@@ -110,8 +110,17 @@ class CirdanEngine:
 
     # -- map: the full pipeline --------------------------------------------------
 
-    def map(self, live: bool | None = None) -> dict:
-        """Access → fingerprint → static + live discovery → drift → artifacts."""
+    def discover(self, live: bool | None = None) -> dict:
+        """Run static (and, when possible, live) discovery into the graph."""
+        builder = self.builder()
+        adapters: dict = builder.run_static()
+        do_live = live if live is not None else bool(self.live_systems())
+        if do_live:
+            adapters.update(builder.run_live())
+        return {"adapters": adapters, "live": do_live}
+
+    def export_artifacts(self) -> list[str]:
+        """Write every cirdan-out artifact from the current graph state."""
         from cirdan.graph import export as gexport
         from cirdan.reports import build_infra_report
         from cirdan.ui.render import render_html
@@ -120,17 +129,10 @@ class CirdanEngine:
         from cirdan.access.redaction import redact_obj
 
         out = self.config.ensure_output_dirs()
-        access = self.refresh_access()
-        fp = self.refresh_fingerprint()
-        builder = self.builder()
-        summary: dict = {"adapters": builder.run_static()}
-        do_live = live if live is not None else bool(self.live_systems())
-        if do_live:
-            summary["adapters"].update(builder.run_live())
+        access, fp = self.access, self.fingerprint
         findings = self.drift()
         incidents = self.incident_list()
 
-        # JSON artifacts
         (out / "access.json").write_text(dump_json(redact_obj(access.model_dump())))
         (out / "fingerprint.json").write_text(dump_json(redact_obj(fp.model_dump())))
         gexport.export_graph(self.store, out)
@@ -138,8 +140,8 @@ class CirdanEngine:
         gexport.export_dependencies(self.store, out)
         gexport.export_schema(out)
         gexport.export_runtime_state(self.store, out)
+        self.incidents.export(out)
 
-        # Human artifacts
         report = build_infra_report(self.store, fp, access, findings, incidents)
         (out / "INFRA_REPORT.md").write_text(report)
         nodes, edges = self.store.all_nodes(), self.store.all_edges()
@@ -163,18 +165,27 @@ class CirdanEngine:
             ],
         )
         (out / "infra.html").write_text(render_html(spec))
+        return [str(out / name) for name in (
+            "infra.html", "INFRA_REPORT.md", "infra.graph.json", "fingerprint.json",
+            "access.json", "services.json", "dependencies.json", "runtime-state.json",
+        )]
 
+    def map(self, live: bool | None = None) -> dict:
+        """Access → fingerprint → static + live discovery → drift → artifacts."""
+        self.refresh_access()
+        fp = self.refresh_fingerprint()
+        summary = self.discover(live=live)
+        artifacts = self.export_artifacts()
+        findings = self.drift()
+        nodes, edges = self.store.all_nodes(), self.store.all_edges()
         summary.update(
             nodes=len(nodes), edges=len(edges),
             findings=[f.model_dump() for f in findings],
-            artifacts=[str(out / name) for name in (
-                "infra.html", "INFRA_REPORT.md", "infra.graph.json", "fingerprint.json",
-                "access.json", "services.json", "dependencies.json", "runtime-state.json",
-            )],
+            artifacts=artifacts,
             fingerprint=fp.model_dump(),
         )
         self.audit.write("map", f"mapped infrastructure: {len(nodes)} nodes, {len(edges)} edges, "
-                                f"{len(findings)} findings", live=do_live)
+                                f"{len(findings)} findings", live=summary["live"])
         return summary
 
     # -- views ---------------------------------------------------------------------
