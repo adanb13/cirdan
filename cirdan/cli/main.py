@@ -350,6 +350,25 @@ def daemon_serve(
         console.print("\nstopped.")
 
 
+@app.command("serve-mcp")
+def serve_mcp(
+    path: str = typer.Argument(".", help="Project root."),
+    transport: str = typer.Option("stdio", "--transport", help="stdio or streamable-http."),
+    port: int = typer.Option(8080, "--port", help="Port for HTTP transport."),
+):
+    """Serve Cirdan as an MCP server (default: stdio, for agent clients)."""
+    from cirdan.engine import CirdanEngine
+    from cirdan.mcp.server import build_mcp_server
+
+    engine = CirdanEngine.open(path)
+    server = build_mcp_server(engine)
+    if transport == "stdio":
+        server.run(transport="stdio")
+    else:
+        server.settings.port = port
+        server.run(transport="streamable-http")
+
+
 @app.command()
 def access(
     path: str = typer.Argument(".", help="Project root."),
