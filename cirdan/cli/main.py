@@ -32,6 +32,25 @@ def _main(
 
 
 @app.command()
+def fingerprint(
+    path: str = typer.Argument(".", help="Project root."),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
+):
+    """Fingerprint the environment: runtimes, clouds, IaC, telemetry, access."""
+    from cirdan.access import detect_access
+    from cirdan.fingerprint import fingerprint_environment, render_fingerprint
+    from cirdan.util import dump_json
+
+    config = load_config(path)
+    ctx = detect_access(config)
+    fp = fingerprint_environment(config, ctx)
+    if json_out:
+        console.print_json(dump_json(fp.model_dump()))
+    else:
+        console.print(render_fingerprint(fp))
+
+
+@app.command()
 def access(
     path: str = typer.Argument(".", help="Project root."),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
