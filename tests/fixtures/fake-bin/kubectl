@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Canned kubectl CLI for tests.
+args="$*"
+emit_items() { echo "{\"items\": $1}"; }
+
+case "$args" in
+  *"get namespaces -o name"*)
+    echo "namespace/production" ;;
+  *"config current-context"*)
+    echo "prod-eks" ;;
+  *"auth can-i patch deployments"*)
+    echo "yes" ;;
+  *"get namespaces -o json"*)
+    emit_items '[{"metadata":{"name":"production"}}]' ;;
+  *"get nodes -o json"*)
+    emit_items '[{"metadata":{"name":"ip-10-0-3-21"},"status":{"conditions":[{"type":"Ready","status":"True"}],"nodeInfo":{"kubeletVersion":"v1.30.0"}}}]' ;;
+  *"get deployments -A -o json"*)
+    emit_items '[{"metadata":{"name":"checkout-api","namespace":"production"},
+      "spec":{"replicas":3,"template":{"spec":{"containers":[{"image":"registry.example.com/checkout-api:v42"}]}}},
+      "status":{"readyReplicas":1}}]' ;;
+  *"get statefulsets -A -o json"*|*"get daemonsets -A -o json"*|*"get ingresses -A -o json"*)
+    emit_items '[]' ;;
+  *"get pods -A -o json"*)
+    emit_items '[
+      {"metadata":{"name":"checkout-api-7f9abc-x1","namespace":"production",
+                   "ownerReferences":[{"kind":"ReplicaSet","name":"checkout-api-7f9abc"}]},
+       "spec":{"nodeName":"ip-10-0-3-21"},
+       "status":{"phase":"Running","containerStatuses":[{"ready":true,"restartCount":0,"state":{"running":{}}}]}},
+      {"metadata":{"name":"checkout-api-7f9abc-x2","namespace":"production",
+                   "ownerReferences":[{"kind":"ReplicaSet","name":"checkout-api-7f9abc"}]},
+       "spec":{"nodeName":"ip-10-0-3-21"},
+       "status":{"phase":"Running","containerStatuses":[{"ready":false,"restartCount":7,
+                 "state":{"waiting":{"reason":"CrashLoopBackOff"}}}]}}
+    ]' ;;
+  *"get services -A -o json"*)
+    emit_items '[{"metadata":{"name":"checkout-api","namespace":"production"},
+      "spec":{"type":"LoadBalancer","clusterIP":"10.0.0.5","ports":[{"port":443}]}}]' ;;
+  *"get events -A"*)
+    emit_items '[{"type":"Warning","reason":"BackOff","message":"Back-off restarting failed container",
+      "involvedObject":{"kind":"Pod","name":"checkout-api-7f9abc-x2","namespace":"production"},
+      "lastTimestamp":"2026-06-11T12:00:00Z","count":12}]' ;;
+  *"logs"*)
+    echo "ERROR database connection refused"
+    echo "ERROR database connection refused" ;;
+  *"rollout restart"*)
+    echo "deployment.apps/checkout-api restarted" ;;
+  *"rollout status"*)
+    echo "deployment \"checkout-api\" successfully rolled out" ;;
+  *"version --client"*)
+    echo "Client Version: v1.30.0" ;;
+  *)
+    echo "fake kubectl: unhandled args: $args" >&2
+    exit 1 ;;
+esac

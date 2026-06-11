@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Canned docker CLI for tests.
+args="$*"
+case "$args" in
+  "version --format {{.Server.Version}}")
+    echo "26.1.0" ;;
+  "ps -q")
+    printf "aaa111\n" ;;
+  "ps -a --format {{json .}}")
+    echo '{"ID":"aaa111","Names":"compose-app-api-1","State":"running"}'
+    echo '{"ID":"bbb222","Names":"compose-app-postgres-1","State":"exited"}'
+    echo '{"ID":"ccc333","Names":"stray-worker","State":"running"}' ;;
+  inspect*aaa111*|inspect*bbb222*|inspect*ccc333*)
+    cat <<'EOF'
+[
+ {"Id":"aaa111","Name":"/compose-app-api-1","RestartCount":0,
+  "State":{"Status":"running","StartedAt":"2026-06-11T10:00:00Z","ExitCode":0,
+           "Health":{"Status":"healthy"}},
+  "Config":{"Image":"compose-app-api:latest",
+            "Labels":{"com.docker.compose.project":"compose-app","com.docker.compose.service":"api"}},
+  "NetworkSettings":{"Ports":{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}}},
+ {"Id":"bbb222","Name":"/compose-app-postgres-1","RestartCount":3,
+  "State":{"Status":"exited","StartedAt":"2026-06-11T09:00:00Z","ExitCode":1},
+  "Config":{"Image":"postgres:16",
+            "Labels":{"com.docker.compose.project":"compose-app","com.docker.compose.service":"postgres"}},
+  "NetworkSettings":{"Ports":{}}},
+ {"Id":"ccc333","Name":"/stray-worker","RestartCount":0,
+  "State":{"Status":"running","StartedAt":"2026-06-11T08:00:00Z","ExitCode":0},
+  "Config":{"Image":"busybox","Labels":{}},
+  "NetworkSettings":{"Ports":{}}}
+]
+EOF
+    ;;
+  "inspect compose-app-api-1")
+    echo '[{"Id":"aaa111","RestartCount":0,"State":{"Status":"running","Health":{"Status":"healthy"},"StartedAt":"2026-06-11T10:00:00Z","ExitCode":0}}]' ;;
+  logs*)
+    echo "INFO ready"
+    echo "ERROR database connection refused" ;;
+  restart*)
+    echo "restarted" ;;
+  *)
+    echo "fake docker: unhandled args: $args" >&2
+    exit 1 ;;
+esac

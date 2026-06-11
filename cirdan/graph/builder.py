@@ -49,6 +49,8 @@ class GraphBuilder:
     def _resolve_ref_edge(self, adapter: Adapter, edge: Edge) -> None:
         name = (edge.target if edge.target.startswith("ref:") else edge.source).split(":", 1)[1]
         node = self.store.resolve(name)
+        if node is None and edge.attrs.get("resolve_only"):
+            return
         if node is None:
             hint = edge.attrs.get("target_hint") or {}
             node = self.store.upsert_node(
@@ -63,7 +65,7 @@ class GraphBuilder:
                     attrs={"external": True} if "." in str(hint.get("host", "")) else {},
                 )
             )
-        attrs = {k: v for k, v in edge.attrs.items() if k != "target_hint"}
+        attrs = {k: v for k, v in edge.attrs.items() if k not in ("target_hint", "resolve_only")}
         if edge.target.startswith("ref:"):
             resolved = edge.model_copy(update={"target": node.id, "attrs": attrs})
         else:
