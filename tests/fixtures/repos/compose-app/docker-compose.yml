@@ -1,0 +1,22 @@
+services:
+  web:
+    image: nginx:1.25
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://app:apppw@postgres:5432/app
+      REDIS_HOST: redis
+      PAYMENTS_URL: https://payments.example.com/v1
+    depends_on:
+      - postgres
+      - redis
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: example
+  redis:
+    image: redis:7

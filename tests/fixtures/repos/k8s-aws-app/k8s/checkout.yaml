@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: production
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: checkout-api
+          image: registry.example.com/checkout-api:v42
+          env:
+            - name: DATABASE_URL
+              value: postgres://checkout:checkoutpw@postgres-prod.abc123.us-west-2.rds.amazonaws.com:5432/checkout
+            - name: REDIS_HOST
+              value: redis-prod
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-api
+  namespace: production
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: checkout-ingress
+  namespace: production
+spec:
+  rules:
+    - host: checkout.example.com
+      http:
+        paths:
+          - path: /
+            backend:
+              service:
+                name: checkout-api
+                port:
+                  number: 443
