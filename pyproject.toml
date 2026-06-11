@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cirdanops"
+version = "0.1.0"
+description = "Cirdan: AI infrastructure cartographer and operations daemon. Graphify for live infrastructure."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Cirdan contributors" }]
+keywords = ["infrastructure", "ai", "agents", "mcp", "observability", "graph", "ops"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "typer>=0.12",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+    "networkx>=3.1",
+    "rich>=13.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+terraform = ["python-hcl2>=4.3"]
+all = [
+    "mcp>=1.2",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-hcl2>=4.3",
+]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+cirdan = "cirdan.cli.main:app"
+cirdand = "cirdan.cli.main:daemon_app"
+
+[project.urls]
+Homepage = "https://github.com/cirdan-ai/cirdan"
+
+[tool.hatch.build.targets.wheel]
+packages = ["cirdan"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
