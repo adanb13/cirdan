@@ -87,7 +87,7 @@ class GraphBuilder:
             summary[adapter.name] = {"nodes": nodes, "edges": edges}
             if self.audit and (nodes or edges):
                 self.audit.write(
-                    "discovery", f"{adapter.name} discovered {nodes} nodes, {edges} edges", kind=kind
+                    "discovery", f"{adapter.name} discovered {nodes} nodes, {edges} edges", phase=kind
                 )
         return summary
 

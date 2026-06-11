@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ spec.title }} · Cirdan</title>
+<script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #58a6ff; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  header { padding: 18px 28px; border-bottom: 1px solid var(--border);
+           display: flex; align-items: baseline; gap: 14px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header .meta { color: var(--muted); font-size: 12px; }
+  section { margin: 22px 28px; }
+  section h2 { font-size: 15px; color: var(--accent); margin: 0 0 10px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 8px; }
+  .fact .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .fact .value { font-size: 18px; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; background: var(--panel);
+          border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: none; }
+  .graph-wrap { display: flex; gap: 14px; height: 640px; }
+  .cy { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+  .side { width: 320px; display: flex; flex-direction: column; gap: 10px; }
+  .panel { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+           padding: 14px; overflow: auto; font-size: 13px; }
+  .panel h3 { margin: 0 0 6px; font-size: 14px; }
+  .panel .muted { color: var(--muted); }
+  .panel ul { margin: 6px 0; padding-left: 18px; }
+  .controls { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+  .controls input { width: 100%; background: var(--bg); color: var(--text);
+                    border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .timeline { border-left: 2px solid var(--border); margin-left: 8px; padding-left: 18px; }
+  .timeline .entry { position: relative; margin-bottom: 16px; }
+  .timeline .entry::before { content: ""; position: absolute; left: -24px; top: 5px;
+                             width: 10px; height: 10px; border-radius: 50%; background: var(--warn); }
+  .timeline .entry.critical::before { background: var(--bad); }
+  .timeline .ts { color: var(--muted); font-size: 12px; }
+  pre.block { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+              padding: 16px; overflow: auto; }
+  .badge { font-size: 10px; padding: 2px 7px; border-radius: 9px; border: 1px solid var(--border);
+           color: var(--muted); margin-left: 6px; }
+  .badge.writes { color: var(--bad); border-color: var(--bad); }
+</style>
+<script>
+const TYPE_COLORS = {
+  Service: "#58a6ff", Container: "#79c0ff", Pod: "#79c0ff", Workload: "#79c0ff",
+  Database: "#d2a8ff", Cache: "#ff9bce", Queue: "#ffa657", Bucket: "#ffa657",
+  Host: "#7ee787", ComputeNode: "#7ee787", Cluster: "#3fb950", Namespace: "#2ea043",
+  LoadBalancer: "#f0883e", Ingress: "#f0883e", DNSRecord: "#f0883e",
+  CloudAccount: "#e3b341", Region: "#e3b341", Pipeline: "#8b949e", Repository: "#8b949e",
+  SystemdUnit: "#56d4dd", Incident: "#f85149", Action: "#d29922", MetricSeries: "#56d4dd",
+  Config: "#6e7681",
+};
+const STATE_BAD = ["unhealthy","failed","crashloopbackoff","exited","notready","degraded","absent"];
+function colorFor(type) { return TYPE_COLORS[type] || "#6e7681"; }
+function renderGraph(cyId, panelId, searchId, data) {
+  const elements = [];
+  const ids = new Set(data.nodes.map(n => n.id));
+  for (const n of data.nodes) {
+    elements.push({ data: { id: n.id, label: n.name, ...n } });
+  }
+  for (const e of data.edges) {
+    if (ids.has(e.source) && ids.has(e.target))
+      elements.push({ data: { id: e.source + "->" + e.target + ":" + e.relation,
+                              source: e.source, target: e.target, ...e } });
+  }
+  const cy = cytoscape({
+    container: document.getElementById(cyId),
+    elements,
+    style: [
+      { selector: "node", style: {
+          "background-color": ele => colorFor(ele.data("type")),
+          "border-width": ele => STATE_BAD.includes((ele.data("state")||"").toLowerCase()) ? 3 : 0,
+          "border-color": "#f85149",
+          label: "data(label)", color: "#e6edf3", "font-size": 10,
+          "text-valign": "bottom", "text-margin-y": 4, width: 26, height: 26 } },
+      { selector: "node[origin='static']", style: { shape: "round-rectangle", opacity: 0.85 } },
+      { selector: "edge", style: {
+          width: 1.4, "line-color": "#30363d", "target-arrow-color": "#30363d",
+          "target-arrow-shape": "triangle", "curve-style": "bezier",
+          label: "data(relation)", "font-size": 7, color: "#8b949e", "text-rotation": "autorotate" } },
+      { selector: "edge[confidence='INFERRED']", style: { "line-style": "dashed" } },
+      { selector: ".dim", style: { opacity: 0.12 } },
+      { selector: ".hl", style: { "border-width": 3, "border-color": "#58a6ff" } },
+    ],
+    layout: { name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 90 },
+  });
+  const panel = document.getElementById(panelId);
+  cy.on("tap", "node", evt => {
+    const d = evt.target.data();
+    let html = `<h3>${d.label}</h3>
+      <div class="muted">${d.type} · ${d.origin} · ${d.confidence}${d.state ? " · " + d.state : ""}</div>`;
+    if (d.evidence && d.evidence.length) {
+      html += `<p class="muted">Evidence:</p><ul>` +
+        d.evidence.map(e => `<li>${e}</li>`).join("") + `</ul>`;
+    }
+    const attrs = Object.entries(d.attrs || {});
+    if (attrs.length) {
+      html += `<p class="muted">Attributes:</p><ul>` +
+        attrs.map(([k, v]) => `<li><b>${k}</b>: ${v}</li>`).join("") + `</ul>`;
+    }
+    panel.innerHTML = html;
+  });
+  cy.on("tap", evt => { if (evt.target === cy) panel.innerHTML = '<span class="muted">Click a node for evidence and attributes.</span>'; });
+  const search = document.getElementById(searchId);
+  if (search) search.addEventListener("input", () => {
+    const q = search.value.toLowerCase();
+    cy.elements().removeClass("dim hl");
+    if (!q) return;
+    const hits = cy.nodes().filter(n => (n.data("label")||"").toLowerCase().includes(q));
+    cy.elements().addClass("dim");
+    hits.removeClass("dim").addClass("hl");
+    hits.connectedEdges().removeClass("dim").connectedNodes().removeClass("dim");
+  });
+  if (data.root && cy.getElementById(data.root).length) {
+    cy.getElementById(data.root).addClass("hl");
+  }
+}
+</script>
+</head>
+<body>
+<header>
+  <h1>{{ spec.title }}</h1>
+  <span class="meta">{{ spec.view_type }} · generated by Cirdan · {{ spec.generated_at }}</span>
+</header>
+
+{% for c in spec.components %}
+  {% set idx = loop.index %}
+  <section>
+  {% if c.title %}<h2>{{ c.title }}</h2>{% endif %}
+  {% if c.type == "SummaryCard" %}
+    <div class="card">
+      {% if c.data.text %}<div>{{ c.data.text }}</div>{% endif %}
+      {% if c.data.facts %}
+      <div class="facts">
+        {% for label, value in c.data.facts.items() %}
+        <div class="fact"><div class="label">{{ label }}</div><div class="value">{{ value }}</div></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  {% elif c.type in ("TopologyGraph", "DependencyGraph") %}
+    <div class="graph-wrap">
+      <div id="cy-{{ idx }}" class="cy"></div>
+      <div class="side">
+        <div class="controls">
+          <input id="search-{{ idx }}" placeholder="search nodes…">
+          <div class="legend">
+            {% for t in ["Service","Container","Database","Cache","Queue","LoadBalancer","Host","Cluster"] %}
+            <span><i class="dot" data-type="{{ t }}"></i>{{ t }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="panel" id="panel-{{ idx }}"><span class="muted">Click a node for evidence and attributes.</span></div>
+      </div>
+    </div>
+    <script>
+      renderGraph("cy-{{ idx }}", "panel-{{ idx }}", "search-{{ idx }}", {{ c.data | tojson }});
+      document.querySelectorAll('#cy-{{ idx }} ~ * .dot, .legend .dot').forEach(d => {
+        d.style.background = TYPE_COLORS[d.dataset.type] || "#6e7681";
+      });
+    </script>
+  {% elif c.type in ("StateTable", "LogClusterTable", "MetricChart") %}
+    <table>
+      <thead><tr>{% for col in c.data.columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for row in c.data.rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+      {% else %}
+        <tr><td colspan="{{ c.data.columns | length }}">nothing here</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% elif c.type == "IncidentTimeline" %}
+    <div class="timeline">
+      {% for entry in c.data.entries %}
+      <div class="entry {{ entry.severity }}">
+        <div class="ts">{{ entry.ts }}</div>
+        <div><b>{{ entry.label }}</b></div>
+        <div class="muted">{{ entry.detail }}</div>
+      </div>
+      {% else %}
+      <div class="entry"><div class="muted">No incidents recorded.</div></div>
+      {% endfor %}
+    </div>
+  {% elif c.type == "ActionPanel" %}
+    <table>
+      <thead><tr><th>Action</th><th>Description</th><th>Command</th></tr></thead>
+      <tbody>
+      {% for a in c.data.actions %}
+        <tr>
+          <td>{{ a.name }}{% if a.writes %}<span class="badge writes">writes</span>{% endif %}</td>
+          <td>{{ a.description }}</td>
+          <td><code>{{ a.command }}</code></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% elif c.type in ("AccessReport", "Markdown") %}
+    <pre class="block">{{ c.data.text }}</pre>
+  {% endif %}
+  </section>
+{% endfor %}
+</body>
+</html>
