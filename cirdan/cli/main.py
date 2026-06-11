@@ -350,6 +350,29 @@ def daemon_serve(
         console.print("\nstopped.")
 
 
+@app.command()
+def install(
+    platform: str = typer.Option(None, "--platform", help="claude, codex, cursor, gemini, or generic (default: all)."),
+    project: bool = typer.Option(False, "--project", help="Install into the current repo instead of the home directory."),
+    path: str = typer.Option(".", "--path", help="Project root (with --project)."),
+):
+    """Install Cirdan instructions (and MCP registration) into agent platforms."""
+    from pathlib import Path
+
+    from cirdan.agents import install as do_install
+
+    platforms = [platform] if platform else None
+    written = do_install(platforms=platforms, project=project, root=Path(path).resolve())
+    scope = "project" if project else "user"
+    console.print(f"Installed Cirdan agent instructions ({scope} scope):")
+    for name, paths in written.items():
+        console.print(f"  [bold]{name}[/bold]:")
+        for p in paths:
+            console.print(f"    - {p}")
+    console.print("\nAgents will now query Cirdan for infrastructure context. "
+                  "Run [bold]cirdan map .[/bold] to build the first graph.")
+
+
 @app.command("serve-mcp")
 def serve_mcp(
     path: str = typer.Argument(".", help="Project root."),
