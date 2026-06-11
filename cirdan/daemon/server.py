@@ -43,6 +43,9 @@ class CirdanDaemon:
             await asyncio.sleep(self.engine.config.daemon.graph_interval)
 
     async def _incident_loop(self) -> None:
+        from cirdan.incidents.responder import IncidentResponder
+
+        responder = IncidentResponder(self.engine)
         while True:
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(
@@ -51,9 +54,15 @@ class CirdanDaemon:
                 )
             self._wake_incidents.clear()
             touched = await asyncio.to_thread(self.engine.detect_incidents)
-            if touched and self.on_event:
-                for incident in touched:
+            for incident in touched:
+                if self.on_event:
                     self.on_event({"kind": "incident", "incident": incident.model_dump()})
+                if responder.should_respond(incident):
+                    self._tasks.append(
+                        asyncio.get_running_loop().create_task(responder.invoke(incident))
+                    )
+                elif incident.status == "resolved":
+                    await asyncio.to_thread(responder.notify, incident, "resolved")
 
     async def _export_loop(self) -> None:
         while True:

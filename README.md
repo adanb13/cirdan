@@ -161,6 +161,20 @@ Every node and edge carries **evidence** and a **confidence label** (`EXTRACTED`
 
 Cirdan maintains a **static graph** (what the repo says should exist: Compose, Kubernetes YAML, Terraform/OpenTofu, Helm, CI, SQL, nginx, systemd units) and a **live graph** (what actually exists: Docker Engine, Kubernetes API, AWS, systemd, Prometheus), merges them, and reports drift — declared-but-not-running, running-but-undeclared, degraded capacity, unhealthy state.
 
+## Incident responder: the agent loop
+
+Detection is automatic; response can be too. When a high/critical incident opens, the daemon writes an **incident brief** (`cirdan-out/incidents/briefs/<id>.md` — evidence, blast radius, available actions, instructions) and, if a responder command is configured, **invokes your agent against it**:
+
+```yaml
+# cirdan.yaml — normally wired by `cirdan install --project`, which detects
+# claude/codex/gemini/aider on PATH and asks you once
+responder:
+  command: 'claude -p "Respond to the Cirdan incident brief at {brief_file}"'
+  webhook_url: https://hooks.slack.com/services/…   # optional notify on open/resolve
+```
+
+The agent investigates and fixes through Cirdan's own tools (`cirdan actions run … --yes`), every action attaches to the incident and is verified, the incident auto-resolves when the condition stays clear, and the whole exchange lands in `audit.jsonl`. Invocations are cooldown-limited per incident condition. Test your setup with `cirdan respond <incident-id> --dry-run`.
+
 ## Actions and verification
 
 Cirdan detects which operations are *technically possible* with the session's access (`docker restart`, `kubectl rollout restart`, `systemctl restart`, …), exposes them as graph-attached capabilities, executes only through the session's own tools, records pre/post state in the audit trail, and verifies the outcome (workload ready, health checks passing, error clusters quiet). There is no separate credential store and no privilege escalation.

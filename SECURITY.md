@@ -14,6 +14,10 @@ Consequences you should be aware of:
 - Write actions (`cirdan actions run …`) execute real commands (`docker restart`, `kubectl rollout restart`, `systemctl restart`). The CLI prompts before write actions unless `--yes` is passed; the MCP `execute_action` tool relies on the calling agent's own approval flow.
 - Every action records pre-state, command, output, post-state, and verification outcome in `cirdan-out/audit.jsonl` and the graph.
 
+## Incident responder
+
+`responder.command` makes the daemon execute a configured command (typically an AI agent CLI) whenever a high/critical incident opens. That command runs with the daemon's privileges and full inherited access. It is never set automatically — `cirdan install` proposes a detected agent and asks; you can also set it by hand. Invocations are cooldown-limited per incident condition (`cooldown_seconds`), bounded by `timeout_seconds`, run without a shell, and are fully audited (command, exit code, output tail). Without a command, the responder only writes briefs and fires webhooks.
+
 ## Redaction
 
 Everything written to artifacts (graph exports, reports, views, logs, action output) passes through redaction that scrubs:

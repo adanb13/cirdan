@@ -21,6 +21,18 @@ telemetry:
   log_tail_lines: 200
   error_window_seconds: 600
 
+responder:
+  enabled: true                        # incidents always get an on-disk brief + hooks
+  # command is what turns briefs into automatic agent response; normally set by
+  # `cirdan install --project`. Placeholders: {brief_file} {incident_id} {title}
+  # command: 'claude -p "Respond to the Cirdan incident brief at {brief_file}"'
+  # notify_command: './scripts/page-me.sh {incident_id}'
+  # webhook_url: https://hooks.slack.com/services/...
+  severities: [high, critical]
+  cooldown_seconds: 600                # per incident condition
+  timeout_seconds: 900
+  max_concurrent: 1
+
 daemon:
   always_on: true
   mcp: false

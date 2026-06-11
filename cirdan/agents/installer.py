@@ -143,6 +143,43 @@ PLATFORMS = {
 }
 
 
+# Agent CLIs we can auto-wire as incident responders, in preference order.
+AGENT_RESPONDER_COMMANDS = [
+    ("claude", 'claude -p "Respond to the Cirdan incident brief at {brief_file}"'),
+    ("codex", 'codex exec "Respond to the Cirdan incident brief at {brief_file}"'),
+    ("gemini", 'gemini -p "Respond to the Cirdan incident brief at {brief_file}"'),
+    ("aider", 'aider --yes --message "Respond to the Cirdan incident brief at {brief_file}"'),
+]
+
+
+def detect_agent_command() -> tuple[str, str] | None:
+    """First agent CLI on PATH that we know how to invoke for incident response."""
+    import shutil
+
+    for name, command in AGENT_RESPONDER_COMMANDS:
+        if shutil.which(name):
+            return name, command
+    return None
+
+
+def write_responder_config(root: Path, command: str) -> Path:
+    """Set responder.command in <root>/cirdan.yaml, preserving any other settings."""
+    import yaml
+
+    path = root / "cirdan.yaml"
+    data: dict = {}
+    if path.is_file():
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except yaml.YAMLError:
+            data = {}
+    responder = data.setdefault("responder", {})
+    responder["enabled"] = True
+    responder["command"] = command
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+    return path
+
+
 def install(platforms: list[str] | None = None, project: bool = False,
             root: Path | None = None) -> dict[str, list[str]]:
     """Install agent instructions. project=True targets the repo; otherwise the home dir."""

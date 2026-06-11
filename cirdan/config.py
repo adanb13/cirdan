@@ -25,6 +25,25 @@ class DaemonConfig(BaseModel):
     access_interval: float = 300.0
 
 
+class ResponderConfig(BaseModel):
+    """Push channel: act when an incident opens.
+
+    Enabled by default: every qualifying incident gets an on-disk brief and any
+    configured webhook/notify hooks fire. Spawning an agent additionally
+    requires `command`, normally set by the `cirdan install` setup prompt.
+    """
+
+    enabled: bool = True
+    # Placeholders: {brief_file} {incident_id} {title}
+    command: str | None = None          # e.g. 'claude -p "Respond to the Cirdan incident brief at {brief_file}"'
+    notify_command: str | None = None   # lighter hook, same placeholders
+    webhook_url: str | None = None      # POST incident JSON on open/resolve
+    severities: list[str] = Field(default_factory=lambda: ["high", "critical"])
+    cooldown_seconds: float = 600.0     # per incident key
+    timeout_seconds: float = 900.0
+    max_concurrent: int = 1
+
+
 class AdaptersConfig(BaseModel):
     auto_detect: bool = True
     enabled: list[str] = Field(default_factory=list)
@@ -55,6 +74,7 @@ class CirdanConfig(BaseModel):
     adapters: AdaptersConfig = Field(default_factory=AdaptersConfig)
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
+    responder: ResponderConfig = Field(default_factory=ResponderConfig)
 
     @property
     def root_path(self) -> Path:

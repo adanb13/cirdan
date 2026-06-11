@@ -261,6 +261,40 @@ def actions_run(
 
 
 @app.command()
+def respond(
+    incident_id: str = typer.Argument(..., help="Incident id (or prefix) to respond to."),
+    path: str = typer.Option(".", "--path"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Write/print the brief and the command without executing."),
+):
+    """Compose an incident brief and invoke the configured responder agent once."""
+    import asyncio
+
+    from cirdan.engine import CirdanEngine
+    from cirdan.incidents.responder import IncidentResponder, render_command
+
+    engine = CirdanEngine.open(path)
+    incident = engine.incidents.get(incident_id)
+    if incident is None:
+        console.print(f"[red]No incident:[/red] {incident_id}")
+        raise typer.Exit(1)
+    resp = IncidentResponder(engine)
+    brief_file = resp.write_brief(incident)
+    console.print(f"Brief: [bold]{brief_file}[/bold]")
+    command = engine.config.responder.command
+    if not command:
+        console.print("[yellow]No responder.command configured[/yellow] — brief-only mode. "
+                      "Set it in cirdan.yaml or rerun `cirdan install --project`.")
+        return
+    argv = render_command(command, incident, brief_file)
+    if dry_run:
+        console.print(f"Would run: [bold]{' '.join(argv)}[/bold]")
+        return
+    ok = asyncio.run(resp.invoke(incident))
+    console.print("[green]responder completed[/green]" if ok else "[red]responder failed[/red]"
+                  + " — see cirdan-out/audit.jsonl")
+
+
+@app.command()
 def verify(
     record_id: str = typer.Argument(..., help="Action record id (act-…)."),
     path: str = typer.Option(".", "--path"),
@@ -371,20 +405,56 @@ def install(
     platform: str = typer.Option(None, "--platform", help="claude, codex, cursor, gemini, or generic (default: all)."),
     project: bool = typer.Option(False, "--project", help="Install into the current repo instead of the home directory."),
     path: str = typer.Option(".", "--path", help="Project root (with --project)."),
+    responder: bool = typer.Option(None, "--responder/--no-responder",
+                                   help="Wire incident auto-response without prompting."),
+    responder_command: str = typer.Option(None, "--responder-command",
+                                          help="Custom agent command ({brief_file} placeholder)."),
 ):
     """Install Cirdan instructions (and MCP registration) into agent platforms."""
+    import sys
     from pathlib import Path
 
     from cirdan.agents import install as do_install
+    from cirdan.agents.installer import detect_agent_command, write_responder_config
 
+    root = Path(path).resolve()
     platforms = [platform] if platform else None
-    written = do_install(platforms=platforms, project=project, root=Path(path).resolve())
+    written = do_install(platforms=platforms, project=project, root=root)
     scope = "project" if project else "user"
     console.print(f"Installed Cirdan agent instructions ({scope} scope):")
     for name, paths in written.items():
         console.print(f"  [bold]{name}[/bold]:")
         for p in paths:
             console.print(f"    - {p}")
+
+    # Incident responder setup: briefs are always written; spawning an agent
+    # needs a command, which we offer to wire up here.
+    if project and responder is not False:
+        command = responder_command
+        agent_name = None
+        if command is None:
+            detected = detect_agent_command()
+            if detected:
+                agent_name, command = detected
+        if command:
+            wire = responder
+            if wire is None and sys.stdin.isatty():
+                wire = typer.confirm(
+                    f"Enable automatic incident response"
+                    + (f" via '{agent_name}'" if agent_name else "")
+                    + f"? (runs: {command})",
+                    default=True,
+                )
+            if wire:
+                config_path = write_responder_config(root, command)
+                console.print(f"\nIncident responder armed in {config_path}:")
+                console.print(f"  [bold]{command}[/bold]")
+                console.print("[dim]cirdand will invoke it when a high/critical incident opens. "
+                              "Test with: cirdan respond <incident-id> --dry-run[/dim]")
+            else:
+                console.print("\n[dim]Responder left in brief-only mode "
+                              "(briefs land in cirdan-out/incidents/briefs/).[/dim]")
+
     console.print("\nAgents will now query Cirdan for infrastructure context. "
                   "Run [bold]cirdan map .[/bold] to build the first graph.")
 
