@@ -39,6 +39,16 @@ class CirdanEngine:
         self.queries = GraphQueries(self.store)
         self._access: AccessContext | None = None
         self._fingerprint: Fingerprint | None = None
+        # Optional progress callback so long pipelines (map, detect) can report
+        # what they are doing instead of appearing to hang.
+        self.progress = None
+
+    def _notify(self, message: str) -> None:
+        if self.progress is not None:
+            try:
+                self.progress(message)
+            except Exception:
+                pass
 
     @classmethod
     def open(cls, path: str = ".", config_file: str | None = None) -> "CirdanEngine":
@@ -61,6 +71,7 @@ class CirdanEngine:
         return self._access
 
     def refresh_access(self) -> AccessContext:
+        self._notify("detecting session access (file/shell/docker/kubectl/aws probes, a few seconds)")
         self._access = detect_access(self.config)
         self.store.kv_set("access_context", self._access.model_dump_json())
         return self._access
@@ -78,6 +89,7 @@ class CirdanEngine:
         return self._fingerprint
 
     def refresh_fingerprint(self) -> Fingerprint:
+        self._notify("fingerprinting environment (runtimes, clouds, IaC, telemetry)")
         self._fingerprint = fingerprint_environment(self.config, self.access)
         self.store.kv_set("fingerprint", self._fingerprint.model_dump_json())
         self.audit.write(
@@ -90,7 +102,7 @@ class CirdanEngine:
     # -- graph ------------------------------------------------------------------
 
     def builder(self) -> GraphBuilder:
-        return GraphBuilder(self.config, self.access, self.store, self.audit)
+        return GraphBuilder(self.config, self.access, self.store, self.audit, progress=self.progress)
 
     def live_systems(self) -> set[str]:
         caps = self.access.capabilities
@@ -113,9 +125,11 @@ class CirdanEngine:
     def discover(self, live: bool | None = None) -> dict:
         """Run static (and, when possible, live) discovery into the graph."""
         builder = self.builder()
+        self._notify("scanning repo for declared infrastructure")
         adapters: dict = builder.run_static()
         do_live = live if live is not None else bool(self.live_systems())
         if do_live:
+            self._notify("discovering live infrastructure")
             adapters.update(builder.run_live())
         return {"adapters": adapters, "live": do_live}
 
@@ -130,6 +144,7 @@ class CirdanEngine:
 
         out = self.config.ensure_output_dirs()
         access, fp = self.access, self.fingerprint
+        self._notify("computing drift and writing artifacts")
         findings = self.drift()
         incidents = self.incident_list()
 
@@ -254,7 +269,10 @@ class CirdanEngine:
                 targets[node.id] = node
         adapters = {a.name: a for a in get_adapters(self.config, self.access, kind="live")}
         count = 0
-        for node in list(targets.values())[:max_targets]:
+        selected = list(targets.values())[:max_targets]
+        if selected:
+            self._notify(f"collecting logs from {len(selected)} unhealthy/drifting components")
+        for node in selected:
             adapter = adapters.get(node.source_adapter)
             if adapter is None:
                 continue

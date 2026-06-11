@@ -24,11 +24,20 @@ class GraphBuilder:
         access: AccessContext,
         store: GraphStore,
         audit: AuditWriter | None = None,
+        progress=None,
     ):
         self.config = config
         self.access = access
         self.store = store
         self.audit = audit
+        self.progress = progress
+
+    def _notify(self, message: str) -> None:
+        if self.progress is not None:
+            try:
+                self.progress(message)
+            except Exception:
+                pass
 
     def _apply_result(self, adapter: Adapter, result: DiscoveryResult) -> tuple[int, int]:
         pending_refs: list[Edge] = []
@@ -76,6 +85,7 @@ class GraphBuilder:
     def _run(self, kind: str) -> dict:
         summary: dict[str, dict] = {}
         for adapter in get_adapters(self.config, self.access, kind=kind):
+            self._notify(f"{adapter.name}: discovering")
             try:
                 result = adapter.discover()
             except Exception as exc:  # one broken adapter must not kill the map
@@ -85,6 +95,8 @@ class GraphBuilder:
                 continue
             nodes, edges = self._apply_result(adapter, result)
             summary[adapter.name] = {"nodes": nodes, "edges": edges}
+            if nodes or edges:
+                self._notify(f"{adapter.name}: {nodes} nodes, {edges} edges")
             if self.audit and (nodes or edges):
                 self.audit.write(
                     "discovery", f"{adapter.name} discovered {nodes} nodes, {edges} edges", phase=kind

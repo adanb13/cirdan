@@ -19,6 +19,12 @@ daemon_app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+status_console = Console(stderr=True)
+
+
+def _attach_progress(engine) -> None:
+    """Stream pipeline steps to stderr so stdout stays clean for --json consumers."""
+    engine.progress = lambda message: status_console.print(f"[dim]  · {message}[/dim]")
 
 
 @daemon_app.callback()
@@ -52,6 +58,8 @@ def map(
     engine = CirdanEngine.open(path)
     if out:
         engine.config.output.dir = out
+    _attach_progress(engine)
+    status_console.print(f"[bold]cirdan map[/bold] {engine.config.root_path}")
     summary = engine.map(live=live)
     if json_out:
         console.print_json(dump_json(summary))
@@ -122,6 +130,7 @@ def incidents(
     from cirdan.util import dump_json
 
     engine = CirdanEngine.open(path)
+    _attach_progress(engine)
     if detect:
         engine.detect_incidents()
     items = engine.incidents.list(include_resolved=all)
@@ -171,7 +180,9 @@ def fingerprint(
     from cirdan.util import dump_json
 
     config = load_config(path)
+    status_console.print("[dim]  · detecting session access (a few seconds)[/dim]")
     ctx = detect_access(config)
+    status_console.print("[dim]  · fingerprinting environment[/dim]")
     fp = fingerprint_environment(config, ctx)
     if json_out:
         console.print_json(dump_json(fp.model_dump()))
