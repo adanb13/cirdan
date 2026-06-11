@@ -211,7 +211,95 @@ class CirdanEngine:
         self.audit.write("view", f"generated view '{spec.title}'", paths=paths)
         return paths
 
-    # -- incidents (populated by the incident engine; empty list until then) ----
+    # -- telemetry & incidents ----------------------------------------------------
+
+    @property
+    def events(self):
+        from cirdan.telemetry.events import EventStore
+
+        if not hasattr(self, "_events"):
+            self._events = EventStore(self.store)
+        return self._events
+
+    @property
+    def incidents(self):
+        from cirdan.incidents.store import IncidentStore
+
+        if not hasattr(self, "_incidents"):
+            self._incidents = IncidentStore(self.store)
+        return self._incidents
+
+    def ingest_telemetry(self, max_targets: int = 10) -> int:
+        """Pull recent logs for unhealthy/drifting components through live adapters."""
+        from cirdan.adapters.registry import get_adapters
+        from cirdan.telemetry.events import log_line_to_event
+
+        targets: dict[str, object] = {}
+        for node in self.queries.unhealthy():
+            targets[node.id] = node
+        for finding in self.drift():
+            node = self.store.get_node(finding.node_id)
+            if node and node.origin.value in ("live", "both"):
+                targets[node.id] = node
+        adapters = {a.name: a for a in get_adapters(self.config, self.access, kind="live")}
+        count = 0
+        for node in list(targets.values())[:max_targets]:
+            adapter = adapters.get(node.source_adapter)
+            if adapter is None:
+                continue
+            try:
+                lines = adapter.collect_logs(node.id, lines=self.config.telemetry.log_tail_lines)
+            except Exception:
+                continue
+            for line in lines:
+                event = log_line_to_event(line, provider=adapter.name, resource=node.id, service=node.name)
+                if event.severity != "info":
+                    self.events.add(event)
+                    count += 1
+        return count
+
+    def detect_incidents(self, ingest: bool = True) -> list:
+        """One detection pass: ingest telemetry, evaluate conditions, persist incidents."""
+        from cirdan.graph.schema import Confidence, Edge, Node, NodeType, Origin, Relation
+        from cirdan.incidents.detector import detect_incidents
+
+        if ingest:
+            self.ingest_telemetry()
+        findings = self.drift()
+        touched = detect_incidents(
+            self.store, self.incidents, findings, self.events,
+            window_seconds=self.config.telemetry.error_window_seconds * 6,
+        )
+        for incident in touched:
+            self.store.upsert_node(
+                Node(
+                    id=f"incident:{incident.id}", type=NodeType.INCIDENT.value, name=incident.title,
+                    origin=Origin.DERIVED, source_adapter="incidents",
+                    confidence=Confidence.INFERRED,
+                    evidence=incident.evidence[:5],
+                    attrs={"status": incident.status, "severity": incident.severity,
+                           "incident_id": incident.id},
+                )
+            )
+            for nid in incident.affected_nodes:
+                if self.store.get_node(nid):
+                    self.store.upsert_edge(
+                        Edge(source=f"incident:{incident.id}", target=nid,
+                             relation=Relation.AFFECTS, confidence=Confidence.INFERRED,
+                             evidence=incident.evidence[:2])
+                    )
+            self.audit.write("incident", f"{incident.id} → {incident.status}: {incident.title}",
+                             severity=incident.severity)
+        self.incidents.export(self.config.ensure_output_dirs())
+        return touched
+
+    def explain_incident(self, incident_id: str) -> str | None:
+        from cirdan.incidents.reports import explain_incident
+
+        incident = self.incidents.get(incident_id)
+        if incident is None:
+            return None
+        return explain_incident(incident, self.store, self.events)
 
     def incident_list(self, include_resolved: bool = False) -> list[dict]:
         with self.store.lock:

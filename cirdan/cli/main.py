@@ -106,6 +106,56 @@ def show(
 
 
 @app.command()
+def incidents(
+    path: str = typer.Option(".", "--path", help="Project root."),
+    all: bool = typer.Option(False, "--all", help="Include resolved incidents."),
+    detect: bool = typer.Option(True, "--detect/--no-detect", help="Run a detection pass first."),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """List incidents (runs a detection pass over current state and telemetry)."""
+    from cirdan.engine import CirdanEngine
+    from cirdan.util import dump_json
+
+    engine = CirdanEngine.open(path)
+    if detect:
+        engine.detect_incidents()
+    items = engine.incidents.list(include_resolved=all)
+    if json_out:
+        console.print_json(dump_json([i.model_dump() for i in items]))
+        return
+    if not items:
+        console.print("[green]No incidents.[/green]")
+        return
+    from rich.table import Table
+
+    table = Table()
+    for col in ("Id", "Status", "Severity", "Started", "Title"):
+        table.add_column(col)
+    for inc in items:
+        color = {"critical": "red", "high": "red", "warning": "yellow"}.get(inc.severity, "white")
+        table.add_row(inc.id, inc.status, f"[{color}]{inc.severity}[/{color}]", inc.started_at, inc.title)
+    console.print(table)
+
+
+@app.command()
+def explain(
+    target: str = typer.Argument(..., help="Incident id (or prefix), or a node name."),
+    path: str = typer.Option(".", "--path", help="Project root."),
+):
+    """Explain an incident or a graph node with its evidence."""
+    from cirdan.engine import CirdanEngine
+    from cirdan.query import answer_query
+
+    engine = CirdanEngine.open(path)
+    report = engine.explain_incident(target)
+    if report is not None:
+        console.print(report)
+        return
+    result = answer_query(engine, target)
+    console.print(result["answer"])
+
+
+@app.command()
 def fingerprint(
     path: str = typer.Argument(".", help="Project root."),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON."),
