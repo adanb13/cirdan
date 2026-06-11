@@ -21,6 +21,11 @@ daemon_app = typer.Typer(
 console = Console()
 
 
+@daemon_app.callback()
+def _daemon_main():
+    """Cirdan always-on daemon."""
+
+
 @app.callback(invoke_without_command=True)
 def _main(
     ctx: typer.Context,

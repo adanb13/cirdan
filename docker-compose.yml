@@ -1,0 +1,14 @@
+# Run the Cirdan daemon against the host's Docker, watching the mounted project.
+services:
+  cirdand:
+    build: .
+    volumes:
+      - .:/workspace:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - cirdan-out:/workspace/cirdan-out
+    ports:
+      - "127.0.0.1:8090:8090"
+    restart: unless-stopped
+
+volumes:
+  cirdan-out:

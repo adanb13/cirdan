@@ -1,0 +1,34 @@
+# Cirdan configuration. Everything is optional — with no config file Cirdan
+# auto-detects what it can.
+
+project: payments-platform
+environment: production
+
+output:
+  dir: cirdan-out
+
+storage:
+  graph: sqlite
+  # path: cirdan-out/cirdan.db        # default
+
+adapters:
+  auto_detect: true
+  # enabled: [docker, kubernetes, aws, terraform, prometheus]  # allowlist (with auto_detect: false)
+  disabled: []                         # e.g. [aws]
+
+telemetry:
+  # prometheus_url: http://prometheus.internal:9090
+  log_tail_lines: 200
+  error_window_seconds: 600
+
+daemon:
+  always_on: true
+  mcp: false
+  api: false
+  host: 127.0.0.1
+  port: 8090
+  fingerprint_interval: 300            # seconds
+  graph_interval: 60
+  incident_interval: 15
+  export_interval: 60
+  access_interval: 300
