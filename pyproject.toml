@@ -4,13 +4,18 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cirdanops"
-version = "0.1.0"
-description = "Cirdan: AI infrastructure cartographer and operations daemon. Graphify for live infrastructure."
+version = "0.1.1"
+description = "AI infrastructure cartographer and operations daemon — Graphify for live infrastructure. Fingerprints, graphs, and watches Docker/Kubernetes/AWS/IaC for AI agents via CLI + MCP."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [{ name = "Cirdan contributors" }]
-keywords = ["infrastructure", "ai", "agents", "mcp", "observability", "graph", "ops"]
+keywords = [
+    "infrastructure", "ai", "agents", "mcp", "mcp-server", "observability",
+    "knowledge-graph", "devops", "sre", "aiops", "docker", "kubernetes",
+    "terraform", "incident-response", "claude-code", "codex", "cursor",
+    "gemini-cli", "agent-skills",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

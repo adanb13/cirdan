@@ -1,5 +1,12 @@
 # Cirdan
 
+[![PyPI](https://img.shields.io/pypi/v/cirdanops)](https://pypi.org/project/cirdanops/)
+[![Python](https://img.shields.io/pypi/pyversions/cirdanops)](https://pypi.org/project/cirdanops/)
+[![Downloads](https://static.pepy.tech/badge/cirdanops)](https://pepy.tech/projects/cirdanops)
+[![CI](https://github.com/adanb13/cirdan/actions/workflows/ci.yml/badge.svg)](https://github.com/adanb13/cirdan/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/adanb13/cirdan)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/adanb13/cirdan?style=social)](https://github.com/adanb13/cirdan/stargazers)
+
 **Cirdan is a standalone AI infrastructure cartographer and operations daemon — Graphify for live infrastructure.**
 
 It installs into AI agents like a skill, but instead of graphing only code, it fingerprints and graphs the live infrastructure the agent can access: Docker, Kubernetes, cloud accounts, IaC, databases, telemetry. It watches that graph continuously, detects incidents, and gives agents (and humans) a structured way to understand and operate the system.
@@ -14,6 +21,8 @@ Cirdan generates views only when the human asks to see something.
 
 ## Install
 
+**From PyPI (recommended):**
+
 ```bash
 uv tool install "cirdanops[all]"
 # or
@@ -22,6 +31,40 @@ pip install "cirdanops[all]"
 ```
 
 Targeted installs: `cirdanops[mcp]`, `cirdanops[api]`, `cirdanops[terraform]`, or combinations like `cirdanops[terraform,mcp]`. The Docker/Kubernetes/AWS/systemd adapters need no extras — they use the CLIs already on your PATH.
+
+**Prerequisites by platform** (Python 3.11+ and `uv` or `pipx`):
+
+```bash
+# macOS
+brew install python@3.12 uv
+
+# Windows
+winget install astral-sh.uv
+
+# Ubuntu / Debian
+sudo apt install python3.12 python3-pip pipx
+# or get uv:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Docker (no Python needed):**
+
+```bash
+# run the always-on daemon against your host's Docker, watching the current directory
+docker run -d \
+  -v "$PWD":/workspace:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -p 127.0.0.1:8090:8090 \
+  ghcr.io/adanb13/cirdan
+```
+
+(or `docker compose up` with the provided [docker-compose.yml](docker-compose.yml))
+
+**From source:**
+
+```bash
+pip install "cirdanops[all] @ git+https://github.com/adanb13/cirdan.git"
+```
 
 Two commands are installed:
 
