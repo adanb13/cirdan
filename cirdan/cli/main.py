@@ -174,6 +174,99 @@ def fingerprint(
         console.print(render_fingerprint(fp))
 
 
+actions_app = typer.Typer(help="Discover and run actions available through inherited access.")
+app.add_typer(actions_app, name="actions")
+
+
+@actions_app.command("list")
+def actions_list(
+    node: str = typer.Argument(..., help="Node id or name, e.g. container:web or checkout-api."),
+    path: str = typer.Option(".", "--path"),
+    json_out: bool = typer.Option(False, "--json"),
+):
+    """List actions currently possible against a component."""
+    from cirdan.actions import list_actions
+    from cirdan.engine import CirdanEngine
+    from cirdan.util import dump_json
+
+    engine = CirdanEngine.open(path)
+    specs = list_actions(engine, node)
+    if json_out:
+        console.print_json(dump_json([s.model_dump() for s in specs]))
+        return
+    if not specs:
+        console.print(f"No actions available for '{node}' with current access.")
+        return
+    from rich.table import Table
+
+    table = Table()
+    for col in ("Action id", "Description", "Command", "Writes"):
+        table.add_column(col)
+    for spec in specs:
+        table.add_row(spec.id, spec.description, " ".join(spec.argv),
+                      "[red]yes[/red]" if spec.writes else "no")
+    console.print(table)
+
+
+@actions_app.command("run")
+def actions_run(
+    action_id: str = typer.Argument(..., help="Action id from `cirdan actions list`."),
+    path: str = typer.Option(".", "--path"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation for write actions."),
+    verify_after: bool = typer.Option(True, "--verify/--no-verify", help="Verify outcome afterwards."),
+):
+    """Execute an action using the session's own access, record it, and verify."""
+    from cirdan.actions import execute_action, find_action
+    from cirdan.engine import CirdanEngine
+    from cirdan.verify import verify_action
+
+    engine = CirdanEngine.open(path)
+    spec = find_action(engine, action_id)
+    if spec is None:
+        console.print(f"[red]Unknown or unavailable action:[/red] {action_id}")
+        raise typer.Exit(1)
+    if spec.writes and not yes:
+        typer.confirm(f"Run write action `{' '.join(spec.argv)}`?", abort=True)
+    record = execute_action(engine, spec)
+    result = record.result
+    console.print(f"[bold]{record.record_id}[/bold] {spec.id} → "
+                  + ("[green]ok[/green]" if result.ok else f"[red]failed rc={result.returncode}[/red]"))
+    if result.stdout.strip():
+        console.print(result.stdout.strip()[-2000:])
+    if result.stderr.strip():
+        console.print(f"[dim]{result.stderr.strip()[-1000:]}[/dim]")
+    if verify_after and spec.writes:
+        verification = verify_action(engine, record)
+        color = "green" if verification["status"] == "succeeded" else "red"
+        console.print(f"Verification: [{color}]{verification['status']}[/{color}] — {verification['summary']}")
+        for check in verification["checks"]:
+            mark = "✓" if check["result"] == "pass" else "✗"
+            console.print(f"  {mark} {check['name']}: {check['detail']}")
+
+
+@app.command()
+def verify(
+    record_id: str = typer.Argument(..., help="Action record id (act-…)."),
+    path: str = typer.Option(".", "--path"),
+):
+    """Re-verify the outcome of a previously executed action."""
+    from cirdan.actions.executor import get_record
+    from cirdan.engine import CirdanEngine
+    from cirdan.verify import verify_action
+
+    engine = CirdanEngine.open(path)
+    record = get_record(engine, record_id)
+    if record is None:
+        console.print(f"[red]No action record:[/red] {record_id}")
+        raise typer.Exit(1)
+    verification = verify_action(engine, record)
+    color = "green" if verification["status"] == "succeeded" else "red"
+    console.print(f"[{color}]{verification['status']}[/{color}] — {verification['summary']}")
+    for check in verification["checks"]:
+        mark = "✓" if check["result"] == "pass" else "✗"
+        console.print(f"  {mark} {check['name']}: {check['detail']}")
+
+
 @app.command()
 def access(
     path: str = typer.Argument(".", help="Project root."),
