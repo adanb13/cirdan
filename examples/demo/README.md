@@ -13,6 +13,9 @@ cd examples/demo
 docker compose up -d        # pulls only small alpine images
 ```
 
+Or from the repo root: `make demo` (then `make demo-incidents`, `make demo-watch`,
+`make demo-down` — see `make help`).
+
 ## Watch Cirdan work
 
 ```bash
