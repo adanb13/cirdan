@@ -61,10 +61,12 @@ def test_run_enrichment_with_fake_agent(engine, tmp_path):
     import shutil as _shutil
 
     script = tmp_path / "fake-agent.sh"
-    # On CI cirdan is on PATH (pip install -e); locally it lives in the repo venv.
+    # Prefer the repo venv binary: a PATH `cirdan` may be a stale global install
+    # (uv tool / pipx) that predates the command under test. CI has no repo venv
+    # and falls back to PATH (pip install -e).
+    repo_venv_cirdan = Path(__file__).parent.parent / ".venv" / "bin" / "cirdan"
     venv_cirdan = (
-        _shutil.which("cirdan")
-        or str(Path(__file__).parent.parent / ".venv" / "bin" / "cirdan")
+        str(repo_venv_cirdan) if repo_venv_cirdan.is_file() else _shutil.which("cirdan")
     )
     script.write_text(
         f"#!/bin/sh\n{venv_cirdan} graph add-edge checkout-api payments_jobs WRITES_TO "
