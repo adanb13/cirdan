@@ -85,7 +85,7 @@ def compute_drift(store: GraphStore, live_systems: set[str]) -> list[Finding]:
             )
         # Unhealthy live state.
         state = str(attrs.get("health") or attrs.get("state") or "").lower()
-        if state in {"unhealthy", "failed", "crashloopbackoff", "exited", "notready"} and node.origin != Origin.STATIC:
+        if state in {"unhealthy", "failed", "crashloopbackoff", "exited", "notready", "restarting", "dead"} and node.origin != Origin.STATIC:
             findings.append(
                 Finding(
                     kind="unhealthy", severity="critical" if state != "exited" else "warning",

@@ -8,21 +8,14 @@ services:
       - "8081:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   api:
     image: python:3.12-alpine
-    command: >
-      python -c "
-      import http.server, json, os;
-      class H(http.server.BaseHTTPRequestHandler):
-          def do_GET(self):
-              body = json.dumps({'service': 'demo-api', 'db': os.environ.get('DATABASE_URL', '')[:20], 'ok': True}).encode();
-              self.send_response(200); self.send_header('Content-Type', 'application/json');
-              self.send_header('Content-Length', str(len(body))); self.end_headers(); self.wfile.write(body);
-          def log_message(self, fmt, *args): print('INFO', fmt % args);
-      http.server.HTTPServer(('0.0.0.0', 8000), H).serve_forever()"
+    command: python -m http.server 8000
     environment:
       DATABASE_URL: postgres://demo:demo@postgres:5432/demo
       REDIS_HOST: redis

@@ -107,7 +107,7 @@ class GraphQueries:
         out = []
         for node in self.store.all_nodes():
             state = str(node.attrs.get("health") or node.attrs.get("state") or "").lower()
-            if state in {"unhealthy", "failed", "crashloopbackoff", "error", "degraded", "notready", "absent"}:
+            if state in {"unhealthy", "failed", "crashloopbackoff", "error", "degraded", "notready", "absent", "restarting", "dead"}:
                 out.append(node)
             elif node.attrs.get("ready_replicas") is not None and node.attrs.get("replicas") is not None:
                 if int(node.attrs["ready_replicas"]) < int(node.attrs["replicas"]):
