@@ -56,11 +56,13 @@ class AgentsStep(SetupStep):
         self.platforms = platforms or detect_platforms()
 
     def status(self) -> tuple[bool, str]:
-        existing = [p for p in self.platforms if self._marker(p).exists()]
-        missing = [p for p in self.platforms if p not in existing]
-        if not missing:
-            return True, f"hooked: {', '.join(existing)}"
-        return False, f"detected: {', '.join(self.platforms)} (missing: {', '.join(missing)})"
+        hooked = [p for p in self.platforms if self._marker(p).exists()]
+        pending = [p for p in self.platforms if p not in hooked]
+        if not pending:
+            return True, f"hooked: {', '.join(hooked)}"
+        if hooked:
+            return False, f"hooked: {', '.join(hooked)} — not yet hooked: {', '.join(pending)}"
+        return False, f"found on this machine: {', '.join(self.platforms)} — none hooked yet"
 
     def _marker(self, platform: str) -> Path:
         base = Path.home() if self.system else self.root
@@ -86,9 +88,23 @@ class McpStep(SetupStep):
     name = "mcp"
     description = "Register the Cirdan MCP server"
 
+    def __init__(self, *args, platforms: list[str] | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from cirdan.agents.installer import detect_platforms
+
+        self.platforms = platforms or detect_platforms()
+
     def status(self) -> tuple[bool, str]:
         if self.system:
-            return True, "n/a at system scope (register per project: cirdan install --project)"
+            from cirdan.agents.installer import user_mcp_status
+
+            registered, missing = user_mcp_status(self.platforms)
+            if not registered and not missing:
+                return True, "no MCP-capable agent CLIs detected — register per project: cirdan install --project"
+            if not missing:
+                return True, f"registered at user scope for: {', '.join(registered)} (available in every project)"
+            return False, (f"not registered for: {', '.join(missing)} — "
+                           f"will add a user-scope MCP server (cirdan serve-mcp --system)")
         path = self.root / ".mcp.json"
         try:
             data = json.loads(path.read_text())
@@ -100,8 +116,22 @@ class McpStep(SetupStep):
 
     def run(self) -> bool:
         if self.system:
-            self.console.print("  skipped: MCP registration is per-project (cirdan install --project)")
-            return True
+            from cirdan.agents.installer import register_user_mcp, user_mcp_status
+
+            registered, missing = user_mcp_status(self.platforms)
+            for platform in registered:
+                self.console.print(f"  [bold]{platform}[/bold]: already registered (user scope)")
+            if not missing:
+                if not registered:
+                    self.console.print("  nothing to do — no MCP-capable agent CLIs detected "
+                                       "(register per project: cirdan install --project)")
+                return True
+            ok = True
+            for platform, (success, message) in register_user_mcp(missing).items():
+                mark = "" if success else "[red]failed:[/red] "
+                self.console.print(f"  [bold]{platform}[/bold]: {mark}{message}")
+                ok = ok and success
+            return ok
         from cirdan.agents.installer import _merge_mcp_json
 
         _merge_mcp_json(self.root / ".mcp.json")
@@ -171,10 +201,11 @@ class DaemonStep(SetupStep):
 
     def status(self) -> tuple[bool, str]:
         from cirdan.daemon.lock import holder
+        from cirdan.util import iso_to_local
 
         info = holder(self._lock_path())
         if info:
-            return True, f"running (pid {info.get('pid')}, since {info.get('started_at')})"
+            return True, f"running (pid {info.get('pid')}, since {iso_to_local(info.get('started_at'))})"
         return False, "not running"
 
     def run(self) -> bool:
@@ -252,7 +283,7 @@ def build_steps(root: Path, console: Console, status_console: Console,
                 system: bool = False) -> list[SetupStep]:
     return [
         AgentsStep(root, console, status_console, system=system, platforms=platforms),
-        McpStep(root, console, status_console, system=system),
+        McpStep(root, console, status_console, system=system, platforms=platforms),
         ResponderStep(root, console, status_console, system=system, command=responder_command),
         MapStep(root, console, status_console, system=system),
         DaemonStep(root, console, status_console, system=system),

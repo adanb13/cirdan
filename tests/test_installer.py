@@ -44,3 +44,27 @@ def test_unknown_platform_raises(tmp_path):
 
     with pytest.raises(ValueError):
         install(platforms=["nope"], project=True, root=tmp_path)
+
+
+def test_user_scope_instructions_use_system_flag(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    install(platforms=["claude"], project=False)
+    text = (home / ".claude" / "CLAUDE.md").read_text()
+    assert 'cirdan query "<question>" --system' in text
+    assert "cirdan map --system" in text
+    assert "~/.cirdan" in text
+    assert "Artifacts land in `~/.cirdan/`" in text
+    skill = (home / ".claude" / "skills" / "cirdan" / "SKILL.md").read_text()
+    assert "--system" in skill
+
+
+def test_project_scope_instructions_unflagged(tmp_path):
+    install(platforms=["claude"], project=True, root=tmp_path)
+    text = (tmp_path / "CLAUDE.md").read_text()
+    assert "cirdan map ." in text
+    assert "--system" not in text

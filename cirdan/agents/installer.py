@@ -13,7 +13,7 @@ from pathlib import Path
 START_MARK = "<!-- cirdan:start -->"
 END_MARK = "<!-- cirdan:end -->"
 
-INSTRUCTIONS = """\
+_INSTRUCTIONS_TEMPLATE = """\
 ## Cirdan: infrastructure awareness
 
 Use Cirdan for infrastructure awareness. Before answering questions about
@@ -22,26 +22,26 @@ dependencies, or incidents, query Cirdan first.
 
 Commands:
 
-    cirdan map .                      # fingerprint + build the full infrastructure graph
-    cirdan fingerprint .              # what is this system? (runtimes, clouds, IaC, telemetry)
-    cirdan query "<question>"         # e.g. "what depends on postgres?", "what broke?"
-    cirdan show "<view request>"      # generate a topology/dependency/incident view
-    cirdan incidents                  # detect and list incidents
-    cirdan explain <incident-or-node> # evidence-backed explanation
-    cirdan actions list <node>        # operations possible with current access
-    cirdan actions run <action-id>    # execute (recorded + verified); add --yes for writes
-    cirdan access .                   # what this session can currently reach
+    cirdan map{map_arg}                  # fingerprint + build the full infrastructure graph
+    cirdan fingerprint{dot}              # what is this system? (runtimes, clouds, IaC, telemetry)
+    cirdan query "<question>"{flag}      # e.g. "what is running?", "what depends on postgres?", "what broke?"
+    cirdan show "<view request>"{flag}   # generate a view; "state" = workload state table
+    cirdan incidents{flag}               # detect and list incidents
+    cirdan explain <incident-or-node>{flag}  # evidence-backed explanation
+    cirdan actions list <node>{flag}     # operations possible with current access
+    cirdan actions run <action-id>{flag} # execute (recorded + verified); add --yes for writes
+    cirdan access{dot}                   # what this session can currently reach
 
 The graph is writable: when you learn a relationship from docs or code that
 Cirdan's scanners missed, contribute it (evidence required, recorded as INFERRED):
 
-    cirdan graph add-edge <source> <target> CONNECTS_TO --evidence "README.md: '…'"
-    cirdan graph add-node queue:orders --type Queue --evidence "docs/arch.md: '…'"
-    cirdan enrich --dry-run           # see what the scanners left unconnected
+    cirdan graph add-edge <source> <target> CONNECTS_TO --evidence "README.md: '…'"{flag}
+    cirdan graph add-node queue:orders --type Queue --evidence "docs/arch.md: '…'"{flag}
+    cirdan enrich --dry-run{flag}        # see what the scanners left unconnected
 
-Artifacts land in `cirdan-out/`: `infra.graph.json` (machine-readable graph),
+Artifacts land in `{outdir}/`: `infra.graph.json` (machine-readable graph),
 `INFRA_REPORT.md`, `infra.html`, `fingerprint.json`, `access.json`.
-
+{scope_note}
 Cirdan inherits this agent/session's available access. If this agent can read
 files, run shell, use kubectl, use docker, or use cloud credentials, Cirdan can
 use the same context. It never escalates beyond it.
@@ -51,7 +51,25 @@ If the Cirdan MCP server is registered, prefer its tools
 `list_available_actions`, `execute_action`, …) over shelling out.
 """
 
-SKILL_MD = f"""\
+_SYSTEM_SCOPE_NOTE = """
+These examples target the machine-level scope (`--system`, graph in ~/.cirdan).
+Inside a repo that has its own cirdan project (cirdan.yaml or cirdan-out/),
+drop the --system flag to use that project's graph.
+"""
+
+
+def instructions(project: bool = True) -> str:
+    return _INSTRUCTIONS_TEMPLATE.format(
+        map_arg=" ." if project else " --system",
+        dot=" ." if project else "",
+        flag="" if project else " --system",
+        outdir="cirdan-out" if project else "~/.cirdan",
+        scope_note="" if project else _SYSTEM_SCOPE_NOTE,
+    )
+
+
+def skill_md(project: bool = True) -> str:
+    return f"""\
 ---
 name: cirdan
 description: Map, query, and operate the live infrastructure this session can access. Use for any question about runtime, deployment, services, dependencies, logs, errors, or incidents.
@@ -59,7 +77,7 @@ description: Map, query, and operate the live infrastructure this session can ac
 
 # Cirdan
 
-{INSTRUCTIONS}
+{instructions(project)}
 """
 
 
@@ -86,7 +104,7 @@ def _write(path: Path, content: str) -> Path:
     return path
 
 
-def _merge_mcp_json(path: Path, key: str = "mcpServers") -> Path:
+def _merge_mcp_json(path: Path, key: str = "mcpServers", args: list[str] | None = None) -> Path:
     data: dict = {}
     if path.is_file():
         try:
@@ -94,7 +112,7 @@ def _merge_mcp_json(path: Path, key: str = "mcpServers") -> Path:
         except json.JSONDecodeError:
             data = {}
     servers = data.setdefault(key, {})
-    servers["cirdan"] = {"command": "cirdan", "args": ["serve-mcp"]}
+    servers["cirdan"] = {"command": "cirdan", "args": args or ["serve-mcp"]}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n")
     return path
@@ -102,27 +120,27 @@ def _merge_mcp_json(path: Path, key: str = "mcpServers") -> Path:
 
 def install_claude(base: Path, project: bool) -> list[Path]:
     written = [
-        _write(base / ".claude" / "skills" / "cirdan" / "SKILL.md", SKILL_MD),
+        _write(base / ".claude" / "skills" / "cirdan" / "SKILL.md", skill_md(project)),
     ]
     if project:
-        written.append(_upsert_block(base / "CLAUDE.md", INSTRUCTIONS))
+        written.append(_upsert_block(base / "CLAUDE.md", instructions(project)))
         written.append(_merge_mcp_json(base / ".mcp.json"))
     else:
-        written.append(_upsert_block(base / ".claude" / "CLAUDE.md", INSTRUCTIONS))
+        written.append(_upsert_block(base / ".claude" / "CLAUDE.md", instructions(project)))
     return written
 
 
 def install_codex(base: Path, project: bool) -> list[Path]:
-    written = [_upsert_block(base / "AGENTS.md", INSTRUCTIONS)]
+    written = [_upsert_block(base / "AGENTS.md", instructions(project))]
     if project:
-        written.append(_write(base / ".codex" / "cirdan.md", SKILL_MD))
+        written.append(_write(base / ".codex" / "cirdan.md", skill_md(project)))
     return written
 
 
 def install_cursor(base: Path, project: bool) -> list[Path]:
     rule = (
         "---\ndescription: Use Cirdan for infrastructure context\nalwaysApply: true\n---\n\n"
-        + INSTRUCTIONS
+        + instructions(project)
     )
     written = [_write(base / ".cursor" / "rules" / "cirdan.mdc", rule)]
     if project:
@@ -131,13 +149,13 @@ def install_cursor(base: Path, project: bool) -> list[Path]:
 
 
 def install_gemini(base: Path, project: bool) -> list[Path]:
-    return [_upsert_block(base / "GEMINI.md", INSTRUCTIONS)]
+    return [_upsert_block(base / "GEMINI.md", instructions(project))]
 
 
 def install_generic(base: Path, project: bool) -> list[Path]:
     return [
-        _write(base / ".agents" / "skills" / "cirdan" / "SKILL.md", SKILL_MD),
-        _upsert_block(base / "AGENTS.md", INSTRUCTIONS),
+        _write(base / ".agents" / "skills" / "cirdan" / "SKILL.md", skill_md(project)),
+        _upsert_block(base / "AGENTS.md", instructions(project)),
     ]
 
 
@@ -159,6 +177,84 @@ _PLATFORM_MARKERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "cursor": (("cursor-agent", "cursor"), (".cursor",)),
     "gemini": (("gemini",), (".gemini",)),
 }
+
+
+# User-scope MCP registration: make `cirdan serve-mcp --system` available in
+# every project. CLI-owned configs (claude, codex) go through the platform's
+# own CLI; JSON configs (gemini, cursor) are merged directly.
+MCP_USER_PLATFORMS = ("claude", "codex", "cursor", "gemini")
+
+_SYSTEM_MCP_ARGS = ("serve-mcp", "--system")
+
+
+def _json_has_cirdan(path: Path, key: str = "mcpServers") -> bool:
+    try:
+        data = json.loads(path.read_text())
+        return isinstance(data, dict) and "cirdan" in (data.get(key) or {})
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+def _toml_has_cirdan(path: Path) -> bool:
+    import tomllib
+
+    try:
+        data = tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    return "cirdan" in (data.get("mcp_servers") or {})
+
+
+def user_mcp_registered(platform: str) -> bool:
+    home = Path.home()
+    if platform == "claude":
+        return _json_has_cirdan(home / ".claude.json")
+    if platform == "codex":
+        return _toml_has_cirdan(home / ".codex" / "config.toml")
+    if platform == "gemini":
+        return _json_has_cirdan(home / ".gemini" / "settings.json")
+    if platform == "cursor":
+        return _json_has_cirdan(home / ".cursor" / "mcp.json")
+    return False
+
+
+def user_mcp_status(platforms: list[str]) -> tuple[list[str], list[str]]:
+    """Split the MCP-capable subset of `platforms` into (registered, missing) at user scope."""
+    capable = [p for p in platforms if p in MCP_USER_PLATFORMS]
+    registered = [p for p in capable if user_mcp_registered(p)]
+    return registered, [p for p in capable if p not in registered]
+
+
+def register_user_mcp(platforms: list[str]) -> dict[str, tuple[bool, str]]:
+    """Register cirdan as a user-scope MCP server. Returns platform -> (ok, message)."""
+    import shutil
+
+    from cirdan.util import run_cmd
+
+    home = Path.home()
+    results: dict[str, tuple[bool, str]] = {}
+    for platform in platforms:
+        if platform not in MCP_USER_PLATFORMS:
+            continue
+        if platform in ("claude", "codex"):
+            if not shutil.which(platform):
+                results[platform] = (True, f"{platform} CLI not on PATH — skipped")
+                continue
+            scope = ["--scope", "user"] if platform == "claude" else []  # codex config is user-global
+            argv = [platform, "mcp", "add", *scope, "cirdan", "--", "cirdan", *_SYSTEM_MCP_ARGS]
+            result = run_cmd(argv, timeout=60)
+            if result.ok:
+                results[platform] = (True, f"registered via `{platform} mcp add`")
+            else:
+                detail = (result.stderr or result.stdout).strip()[:300] or "failed"
+                results[platform] = (False, f"`{platform} mcp add` failed: {detail}")
+        elif platform == "gemini":
+            path = _merge_mcp_json(home / ".gemini" / "settings.json", args=list(_SYSTEM_MCP_ARGS))
+            results[platform] = (True, f"registered in {path}")
+        elif platform == "cursor":
+            path = _merge_mcp_json(home / ".cursor" / "mcp.json", args=list(_SYSTEM_MCP_ARGS))
+            results[platform] = (True, f"registered in {path}")
+    return results
 
 
 def detect_platforms() -> list[str]:

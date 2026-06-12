@@ -105,3 +105,130 @@ def test_daemon_step_spawns_and_reports_running(project, monkeypatch):
             while time.time() < deadline and holder(project / "cirdan-out" / "cirdand.lock"):
                 time.sleep(0.3)
     assert holder(project / "cirdan-out" / "cirdand.lock") is None
+
+
+# -- status wording & system-scope MCP ----------------------------------------
+
+
+def test_agents_status_wording(project):
+    from cirdan.cli.setup_flow import AgentsStep
+
+    step = AgentsStep(project, quiet, quiet, platforms=["claude", "generic"])
+    assert step.status() == (False, "found on this machine: claude, generic — none hooked yet")
+
+    generic_marker = project / ".agents" / "skills" / "cirdan" / "SKILL.md"
+    generic_marker.parent.mkdir(parents=True)
+    generic_marker.write_text("x")
+    assert step.status() == (False, "hooked: generic — not yet hooked: claude")
+
+    claude_marker = project / ".claude" / "skills" / "cirdan" / "SKILL.md"
+    claude_marker.parent.mkdir(parents=True)
+    claude_marker.write_text("x")
+    assert step.status() == (True, "hooked: claude, generic")
+
+
+def test_mcp_step_system_status_wording(tmp_path, monkeypatch):
+    from cirdan.cli.setup_flow import McpStep
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    step = McpStep(tmp_path, quiet, quiet, system=True,
+                   platforms=["claude", "codex", "cursor", "gemini", "generic"])
+    done, msg = step.status()
+    assert done is False
+    assert "n/a" not in msg
+    for name in ("claude", "codex", "cursor", "gemini"):
+        assert name in msg
+
+    # No MCP-capable platforms detected → nothing to do, step counts as done.
+    none_step = McpStep(tmp_path, quiet, quiet, system=True, platforms=["generic"])
+    done, msg = none_step.status()
+    assert done is True
+    assert "per project" in msg or "--project" in msg
+
+
+def test_mcp_step_system_status_all_registered(tmp_path, monkeypatch):
+    import json
+
+    from cirdan.cli.setup_flow import McpStep
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    (home / ".claude.json").write_text(json.dumps({"mcpServers": {"cirdan": {"command": "cirdan"}}}))
+    (home / ".codex").mkdir()
+    (home / ".codex" / "config.toml").write_text('[mcp_servers.cirdan]\ncommand = "cirdan"\n')
+    (home / ".gemini").mkdir()
+    (home / ".gemini" / "settings.json").write_text(json.dumps({"mcpServers": {"cirdan": {}}}))
+    (home / ".cursor").mkdir()
+    (home / ".cursor" / "mcp.json").write_text(json.dumps({"mcpServers": {"cirdan": {}}}))
+
+    step = McpStep(tmp_path, quiet, quiet, system=True,
+                   platforms=["claude", "codex", "cursor", "gemini", "generic"])
+    done, msg = step.status()
+    assert done is True
+    assert "user scope" in msg
+
+
+def test_mcp_step_system_run_registers(tmp_path, monkeypatch):
+    import json
+
+    import cirdan.util
+    from cirdan.cli.setup_flow import McpStep
+    from cirdan.util import CmdResult
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setattr(shutil, "which",
+                        lambda name, *a, **k: f"/usr/bin/{name}" if name in ("claude", "codex") else None)
+
+    calls = []
+
+    def fake_run_cmd(argv, timeout=5.0, input_text=None):
+        calls.append(argv)
+        return CmdResult(argv=argv, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(cirdan.util, "run_cmd", fake_run_cmd)
+
+    # Pre-existing gemini settings must survive the merge.
+    (home / ".gemini").mkdir()
+    (home / ".gemini" / "settings.json").write_text(json.dumps({"theme": "dark"}))
+
+    step = McpStep(tmp_path, quiet, quiet, system=True,
+                   platforms=["claude", "codex", "cursor", "gemini", "generic"])
+    assert step.run() is True
+
+    assert ["claude", "mcp", "add", "--scope", "user", "cirdan",
+            "--", "cirdan", "serve-mcp", "--system"] in calls
+    assert ["codex", "mcp", "add", "cirdan", "--", "cirdan", "serve-mcp", "--system"] in calls
+
+    gemini = json.loads((home / ".gemini" / "settings.json").read_text())
+    assert gemini["mcpServers"]["cirdan"]["args"] == ["serve-mcp", "--system"]
+    assert gemini["theme"] == "dark"
+    cursor = json.loads((home / ".cursor" / "mcp.json").read_text())
+    assert cursor["mcpServers"]["cirdan"]["args"] == ["serve-mcp", "--system"]
+
+
+def test_setup_summary_appends_system_flag(tmp_path, monkeypatch):
+    from cirdan.cli import main as cli_main
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    printed = []
+    monkeypatch.setattr(cli_main.console, "print",
+                        lambda *a, **k: printed.append(" ".join(str(x) for x in a)))
+
+    cli_main._setup_summary(tmp_path, {}, system=True)
+    assert "cirdan incidents --system" in printed[-1]
+
+    printed.clear()
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir()
+    cli_main._setup_summary(project_dir, {}, system=False)
+    assert "--system" not in printed[-1]
