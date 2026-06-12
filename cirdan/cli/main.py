@@ -101,6 +101,8 @@ def map(
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     live: bool = typer.Option(None, "--live/--no-live", help="Force live discovery on/off (default: auto)."),
     out: str = typer.Option(None, "--out", help="Output directory (default: cirdan-out)."),
+    resolution: float = typer.Option(None, "--resolution",
+                                     help="Subsystem granularity (Louvain resolution; higher = more groups)."),
     json_out: bool = typer.Option(False, "--json", help="Emit the run summary as JSON."),
 ):
     """Fingerprint the environment and build the full infrastructure map + artifacts."""
@@ -112,6 +114,8 @@ def map(
     engine = CirdanEngine.open(path, system=system)
     if out:
         engine.config.output.dir = out
+    if resolution is not None:
+        engine.config.output.community_resolution = resolution
     _attach_progress(engine)
     status_console.print(f"[bold]cirdan map[/bold] {engine.config.root_path}")
     summary = engine.map(live=live)

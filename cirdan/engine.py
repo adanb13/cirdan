@@ -144,22 +144,26 @@ class CirdanEngine:
         from cirdan.util import dump_json
         from cirdan.access.redaction import redact_obj
 
+        from cirdan.graph.communities import compute_communities
+
         out = self.config.ensure_output_dirs()
         access, fp = self.access, self.fingerprint
-        self._notify("computing drift and writing artifacts")
+        self._notify("computing drift, subsystems, and writing artifacts")
         findings = self.drift()
         incidents = self.incident_list()
+        communities = compute_communities(self.store, self.config.output.community_resolution)
 
         (out / "access.json").write_text(dump_json(redact_obj(access.model_dump())))
         (out / "fingerprint.json").write_text(dump_json(redact_obj(fp.model_dump())))
-        gexport.export_graph(self.store, out)
+        gexport.export_graph(self.store, out, communities=communities)
         gexport.export_services(self.store, out)
         gexport.export_dependencies(self.store, out)
         gexport.export_schema(out)
         gexport.export_runtime_state(self.store, out)
         self.incidents.export(out)
 
-        report = build_infra_report(self.store, fp, access, findings, incidents)
+        report = build_infra_report(self.store, fp, access, findings, incidents,
+                                    communities=communities)
         (out / "INFRA_REPORT.md").write_text(report)
         nodes, edges = self.store.all_nodes(), self.store.all_edges()
         spec = ViewSpec(
@@ -178,7 +182,7 @@ class CirdanEngine:
                     }},
                 ),
                 ViewComponent(type="TopologyGraph", title="Topology",
-                              data=graph_component_data(nodes, edges)),
+                              data=graph_component_data(nodes, edges, communities=communities)),
             ],
         )
         (out / "infra.html").write_text(render_html(spec))

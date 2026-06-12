@@ -11,23 +11,29 @@ from cirdan.graph.store import GraphStore
 from cirdan.util import dump_json, now_iso
 
 
-def graph_payload(store: GraphStore) -> dict:
+def graph_payload(store: GraphStore, communities: dict | None = None) -> dict:
     nodes = store.all_nodes()
     edges = store.all_edges()
+    node_dicts = []
+    for node in nodes:
+        data = node.model_dump()
+        if communities is not None:
+            data["community"] = communities.get(node.id)
+        node_dicts.append(data)
     return redact_obj(
         {
             "generated_at": now_iso(),
             "generator": "cirdan",
             "counts": {"nodes": len(nodes), "edges": len(edges)},
-            "nodes": [n.model_dump() for n in nodes],
+            "nodes": node_dicts,
             "edges": [e.model_dump() for e in edges],
         }
     )
 
 
-def export_graph(store: GraphStore, out_dir: Path) -> Path:
+def export_graph(store: GraphStore, out_dir: Path, communities: dict | None = None) -> Path:
     path = out_dir / "infra.graph.json"
-    path.write_text(dump_json(graph_payload(store)))
+    path.write_text(dump_json(graph_payload(store, communities=communities)))
     return path
 
 

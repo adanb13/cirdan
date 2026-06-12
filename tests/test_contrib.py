@@ -111,24 +111,35 @@ def test_agent_cannot_upgrade_deterministic_claim(engine):
     assert edge.confidence == Confidence.EXTRACTED
 
 
-def test_cli_add_edge_roundtrip(engine, compose_app, monkeypatch, tmp_path):
+def test_cli_add_edge_roundtrip(monkeypatch, tmp_path):
+    """CLI and test must share one db: use a tmp project copy with default paths."""
+    import shutil
+
     from typer.testing import CliRunner
 
     from cirdan.cli.main import app
+    from cirdan.config import CirdanConfig
 
+    root = tmp_path / "proj"
+    shutil.copytree(FIXTURES / "repos" / "compose-app", root)
     monkeypatch.setenv("CIRDAN_NO_UPDATE_CHECK", "1")
+    eng = CirdanEngine(CirdanConfig(root=str(root)))
+    eng._access = make_access()
+    eng.store.kv_set("access_context", eng._access.model_dump_json())
+    eng.builder().run_static()
+
     runner = CliRunner()
     result = runner.invoke(app, [
         "graph", "add-edge", "api", "redis", "READS_FROM",
         "--evidence", "README: 'api caches sessions in redis'",
-        "--agent", "test", "--path", str(compose_app.root_path),
+        "--agent", "test", "--path", str(root),
     ])
     assert result.exit_code == 0, result.output
     assert "READS_FROM" in result.output
 
     bad = runner.invoke(app, [
         "graph", "add-edge", "api", "nothing-here-xyz", "READS_FROM",
-        "--evidence", "x", "--path", str(compose_app.root_path),
+        "--evidence", "x", "--path", str(root),
     ])
     assert bad.exit_code == 1
     assert "rejected" in bad.output

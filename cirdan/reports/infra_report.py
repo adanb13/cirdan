@@ -20,6 +20,7 @@ def build_infra_report(
     access: AccessContext,
     findings: list[Finding],
     incidents: list[dict] | None = None,
+    communities: dict | None = None,
 ) -> str:
     queries = GraphQueries(store)
     nodes = store.all_nodes()
@@ -78,6 +79,39 @@ def build_infra_report(
         state = node.attrs.get("health") or node.attrs.get("state") or "—"
         add(f"| {node.name} | {node.type} | {node.origin.value} | {state} | {dep_names} |")
     add("")
+
+    # -- subsystems (louvain communities) ----------------------------------------
+    if communities:
+        groups: dict[int, list] = {}
+        node_by_id = {n.id: n for n in nodes}
+        for node_id, community in communities.items():
+            node = node_by_id.get(node_id)
+            if node:
+                groups.setdefault(community, []).append(node)
+        multi = {c: members for c, members in groups.items() if len(members) >= 2}
+        if multi:
+            add("## Subsystems")
+            add("")
+            add("Connected groups detected in the topology (Louvain clustering):")
+            add("")
+            for community, members in sorted(multi.items(), key=lambda kv: -len(kv[1]))[:8]:
+                names = ", ".join(sorted(m.name for m in members)[:10])
+                more = f" (+{len(members) - 10} more)" if len(members) > 10 else ""
+                add(f"- **Subsystem {community}** ({len(members)} components): {names}{more}")
+            add("")
+        # The graph's hubs: what the most things depend on.
+        degree: dict[str, int] = {}
+        for edge in edges:
+            degree[edge.source] = degree.get(edge.source, 0) + 1
+            degree[edge.target] = degree.get(edge.target, 0) + 1
+        hubs = sorted(
+            (n for n in nodes if degree.get(n.id, 0) >= 3),
+            key=lambda n: -degree.get(n.id, 0),
+        )[:5]
+        if hubs:
+            add("Highly connected hubs: " + ", ".join(
+                f"**{h.name}** ({degree[h.id]} edges)" for h in hubs))
+            add("")
 
     # -- entrypoints -----------------------------------------------------------
     entrypoints = queries.public_entrypoints()

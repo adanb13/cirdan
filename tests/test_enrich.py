@@ -58,8 +58,14 @@ def test_brief_mentions_system_flag(engine, monkeypatch):
 def test_run_enrichment_with_fake_agent(engine, tmp_path):
     # Fake agent: reads nothing, contributes one edge via the contrib API in-process
     # through the CLI (same db file).
+    import shutil as _shutil
+
     script = tmp_path / "fake-agent.sh"
-    venv_cirdan = Path(__file__).parent.parent / ".venv" / "bin" / "cirdan"
+    # On CI cirdan is on PATH (pip install -e); locally it lives in the repo venv.
+    venv_cirdan = (
+        _shutil.which("cirdan")
+        or str(Path(__file__).parent.parent / ".venv" / "bin" / "cirdan")
+    )
     script.write_text(
         f"#!/bin/sh\n{venv_cirdan} graph add-edge checkout-api payments_jobs WRITES_TO "
         f"--evidence 'fake-agent: checkout publishes payment jobs' "

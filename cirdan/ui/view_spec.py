@@ -38,7 +38,7 @@ class ViewSpec(BaseModel):
     generated_at: str = Field(default_factory=now_iso)
 
 
-def graph_component_data(nodes: list, edges: list) -> dict:
+def graph_component_data(nodes: list, edges: list, communities: dict | None = None) -> dict:
     """Convert graph Node/Edge models to the plain payload graph components use."""
     return {
         "nodes": [
@@ -49,6 +49,7 @@ def graph_component_data(nodes: list, edges: list) -> dict:
                 "origin": n.origin.value,
                 "confidence": n.confidence.value,
                 "state": n.attrs.get("health") or n.attrs.get("state"),
+                "community": (communities or {}).get(n.id),
                 "evidence": n.evidence[:5],
                 "attrs": {k: v for k, v in n.attrs.items() if isinstance(v, (str, int, float, bool))},
             }

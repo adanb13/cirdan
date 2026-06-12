@@ -65,7 +65,13 @@ const TYPE_COLORS = {
   Config: "#6e7681",
 };
 const STATE_BAD = ["unhealthy","failed","crashloopbackoff","exited","notready","degraded","absent"];
+const COMMUNITY_PALETTE = ["#58a6ff","#3fb950","#d2a8ff","#f0883e","#ff9bce","#56d4dd",
+                           "#e3b341","#7ee787","#f85149","#79c0ff","#ffa657","#2ea043"];
 function colorFor(type) { return TYPE_COLORS[type] || "#6e7681"; }
+function communityColor(community) {
+  if (community === null || community === undefined) return "#6e7681";
+  return COMMUNITY_PALETTE[community % COMMUNITY_PALETTE.length];
+}
 function renderGraph(cyId, panelId, searchId, data) {
   const elements = [];
   const ids = new Set(data.nodes.map(n => n.id));
@@ -77,12 +83,15 @@ function renderGraph(cyId, panelId, searchId, data) {
       elements.push({ data: { id: e.source + "->" + e.target + ":" + e.relation,
                               source: e.source, target: e.target, ...e } });
   }
+  let colorMode = "type";
   const cy = cytoscape({
     container: document.getElementById(cyId),
     elements,
     style: [
       { selector: "node", style: {
-          "background-color": ele => colorFor(ele.data("type")),
+          "background-color": ele => colorMode === "subsystem"
+              ? communityColor(ele.data("community"))
+              : colorFor(ele.data("type")),
           "border-width": ele => STATE_BAD.includes((ele.data("state")||"").toLowerCase()) ? 3 : 0,
           "border-color": "#f85149",
           label: "data(label)", color: "#e6edf3", "font-size": 10,
@@ -98,11 +107,18 @@ function renderGraph(cyId, panelId, searchId, data) {
     ],
     layout: { name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 90 },
   });
+  const modeSelect = document.getElementById(searchId.replace("search", "colormode"));
+  if (modeSelect) modeSelect.addEventListener("change", () => {
+    colorMode = modeSelect.value;
+    cy.style().update();
+  });
   const panel = document.getElementById(panelId);
   cy.on("tap", "node", evt => {
     const d = evt.target.data();
+    const subsystem = (d.community !== null && d.community !== undefined)
+        ? ` · subsystem ${d.community}` : "";
     let html = `<h3>${d.label}</h3>
-      <div class="muted">${d.type} · ${d.origin} · ${d.confidence}${d.state ? " · " + d.state : ""}</div>`;
+      <div class="muted">${d.type} · ${d.origin} · ${d.confidence}${d.state ? " · " + d.state : ""}${subsystem}</div>`;
     if (d.evidence && d.evidence.length) {
       html += `<p class="muted">Evidence:</p><ul>` +
         d.evidence.map(e => `<li>${e}</li>`).join("") + `</ul>`;
@@ -158,6 +174,10 @@ function renderGraph(cyId, panelId, searchId, data) {
       <div class="side">
         <div class="controls">
           <input id="search-{{ idx }}" placeholder="search nodes…">
+          <select id="colormode-{{ idx }}" style="margin-top:8px;width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;">
+            <option value="type">color by type</option>
+            <option value="subsystem">color by subsystem</option>
+          </select>
           <div class="legend">
             {% for t in ["Service","Container","Database","Cache","Queue","LoadBalancer","Host","Cluster"] %}
             <span><i class="dot" data-type="{{ t }}"></i>{{ t }}</span>

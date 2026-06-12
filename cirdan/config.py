@@ -64,6 +64,8 @@ class TelemetryConfig(BaseModel):
 
 class OutputConfig(BaseModel):
     dir: str = "cirdan-out"
+    # Louvain resolution for subsystem grouping: higher → more, smaller communities.
+    community_resolution: float = 1.0
 
 
 class StorageConfig(BaseModel):
