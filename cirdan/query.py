@@ -40,6 +40,8 @@ def answer_query(engine: CirdanEngine, question: str) -> dict:
 
     if re.search(r"(what|which).*(running on|infrastructure|system is|platform)|where am i", text):
         return _what_is_this(engine)
+    if re.search(r"(what|which|who|list|show).*\brunning\b|currently (running|up)|\bis up\b", text):
+        return _whats_running(engine)
     if re.search(r"depends on|dependents|what uses|who uses|relies on", text) and subject:
         if re.search(r"what does|depend(s)? on what|its dependencies", text):
             return _dependencies(engine, subject)
@@ -57,13 +59,59 @@ def answer_query(engine: CirdanEngine, question: str) -> dict:
     counts: dict[str, int] = {}
     for node in engine.store.all_nodes():
         counts[node.type] = counts.get(node.type, 0) + 1
+    _, state_counts = _workload_states(engine)
+    lines = [
+        "No matching intent or component. The graph holds "
+        + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+        + "."
+    ]
+    if state_counts:
+        lines.append("Runtime: " + ", ".join(f"{v} {k}" for k, v in state_counts.items()) + ".")
+    lines.append(
+        "Try `cirdan query \"what is running\"`, `cirdan query \"what depends on <name>\"`, "
+        "`cirdan query \"what broke?\"`, or `cirdan show state` for a table."
+    )
     return {
-        "answer": (
-            "No matching intent or component. The graph holds "
-            + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
-            + ". Try `cirdan query \"what depends on <name>\"`, or use `infra.graph.json` directly."
-        ),
-        "data": {"node_type_counts": counts},
+        "answer": "\n".join(lines),
+        "data": {"node_type_counts": counts, "state_counts": state_counts},
+    }
+
+
+def _workload_states(engine: CirdanEngine) -> tuple[list[dict], dict[str, int]]:
+    workloads = []
+    state_counts: dict[str, int] = {}
+    for node in engine.queries.workloads():
+        state = str(node.attrs.get("health") or node.attrs.get("state") or "unknown")
+        workloads.append({
+            "id": node.id, "name": node.name, "type": node.type,
+            "origin": node.origin.value, "state": state,
+        })
+        state_counts[state] = state_counts.get(state, 0) + 1
+    state_counts = dict(sorted(state_counts.items(), key=lambda kv: -kv[1]))
+    return workloads, state_counts
+
+
+def _whats_running(engine: CirdanEngine) -> dict:
+    workloads, state_counts = _workload_states(engine)
+    if not workloads:
+        return {
+            "answer": "No workloads in the graph. Run `cirdan map .` first.",
+            "data": {"workloads": [], "state_counts": {}},
+        }
+    lines = [
+        f"{len(workloads)} workloads: "
+        + ", ".join(f"{v} {k}" for k, v in state_counts.items())
+    ]
+    ok_states = {"running", "healthy"}
+    running = [w for w in workloads if w["state"] in ok_states]
+    not_running = [w for w in workloads if w["state"] not in ok_states]
+    lines += [f"- {w['name']} ({w['type']}): {w['state']}" for w in not_running]
+    if running:
+        lines.append("Running: " + ", ".join(w["name"] for w in running))
+    lines.append("For a full table: `cirdan show state`.")
+    return {
+        "answer": "\n".join(lines),
+        "data": {"workloads": workloads, "state_counts": state_counts},
     }
 
 

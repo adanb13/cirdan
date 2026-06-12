@@ -24,6 +24,11 @@ ENTRYPOINT_TYPES = {
     NodeType.DNS_RECORD.value,
 }
 
+BAD_STATES = {
+    "unhealthy", "failed", "crashloopbackoff", "error", "degraded",
+    "notready", "absent", "restarting", "dead",
+}
+
 
 class GraphQueries:
     def __init__(self, store: GraphStore):
@@ -107,7 +112,7 @@ class GraphQueries:
         out = []
         for node in self.store.all_nodes():
             state = str(node.attrs.get("health") or node.attrs.get("state") or "").lower()
-            if state in {"unhealthy", "failed", "crashloopbackoff", "error", "degraded", "notready", "absent", "restarting", "dead"}:
+            if state in BAD_STATES:
                 out.append(node)
             elif node.attrs.get("ready_replicas") is not None and node.attrs.get("replicas") is not None:
                 if int(node.attrs["ready_replicas"]) < int(node.attrs["replicas"]):

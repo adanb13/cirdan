@@ -42,6 +42,23 @@ def test_query_capabilities(engine):
 def test_query_unknown_returns_counts(engine):
     result = answer_query(engine, "zzz qqq xyzzy")
     assert "node_type_counts" in result["data"]
+    assert "state_counts" in result["data"]
+    assert "what is running" in result["answer"]
+    assert "show state" in result["answer"]
+
+
+def test_query_whats_running(engine):
+    result = answer_query(engine, "what is running right now?")
+    workloads = result["data"]["workloads"]
+    assert workloads
+    assert all(w["state"] for w in workloads)
+    assert result["data"]["state_counts"]
+    assert "running" in result["answer"]
+
+
+def test_query_whats_running_does_not_shadow_fingerprint(engine):
+    result = answer_query(engine, "what is running on this infrastructure?")
+    assert "primary_runtime" in result["data"]
 
 
 def test_view_router_dependency(engine):

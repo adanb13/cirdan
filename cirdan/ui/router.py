@@ -165,6 +165,8 @@ def _access_view(engine: CirdanEngine) -> ViewSpec:
 
 
 def _state_view(engine: CirdanEngine) -> ViewSpec:
+    from cirdan.graph.queries import BAD_STATES
+
     rows = []
     for node in engine.queries.workloads():
         state = node.attrs.get("health") or node.attrs.get("state") or "unknown"
@@ -172,6 +174,7 @@ def _state_view(engine: CirdanEngine) -> ViewSpec:
         if node.attrs.get("replicas") is not None:
             replicas = f"{node.attrs.get('ready_replicas', '?')}/{node.attrs['replicas']}"
         rows.append([node.name, node.type, node.origin.value, str(state), replicas])
+    rows.sort(key=lambda r: (r[3].lower() not in BAD_STATES, r[3].lower() in {"running", "healthy"}, r[0]))
     findings = engine.drift()
     finding_rows = [[f.severity, f.kind, f.summary] for f in findings]
     components = [

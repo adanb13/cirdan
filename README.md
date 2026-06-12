@@ -129,9 +129,11 @@ cirdan-out/
 cirdan map .                        # full pipeline: fingerprint → graph → artifacts
 cirdan fingerprint .                # what is this system? (with confidence + evidence)
 cirdan access .                     # capability mirror for the current session
+cirdan query "what is running right now?"
 cirdan query "what depends on postgres?"
 cirdan query "what broke in the last hour?"
 cirdan query "what can the agent do here?"
+cirdan show "state"                 # workload state table
 cirdan show "show me the infrastructure map"
 cirdan show "show checkout-api as a dependency graph"
 cirdan show "show last night's incidents as a timeline"
