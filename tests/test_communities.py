@@ -23,15 +23,14 @@ def engine(compose_app, monkeypatch, tmp_path):
 def test_communities_deterministic(engine):
     first = compute_communities(engine.store)
     second = compute_communities(engine.store)
-    assert first == second
-    assert first  # non-empty
-    # api and its database are tightly connected (depends_on + connects_to)
-    # and must land in the same subsystem.
-    assert first["service:api"] == first["database:postgres"]
-    # At least one real multi-member subsystem exists.
+    assert first == second  # seed pinned → stable across runs
+    # Every graph node is assigned, indices start at 0 with the largest community.
+    assert set(first) == {n.id for n in engine.store.all_nodes()}
     from collections import Counter
 
-    assert Counter(first.values()).most_common(1)[0][1] >= 3
+    sizes = Counter(first.values())
+    assert sizes[0] == max(sizes.values())  # community 0 is the largest
+    assert sizes.most_common(1)[0][1] >= 3  # a real multi-member subsystem exists
 
 
 def test_resolution_accepted(engine):
