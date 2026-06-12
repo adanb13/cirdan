@@ -143,6 +143,29 @@ PLATFORMS = {
 }
 
 
+# How we recognize that an agent platform is in use on this machine:
+# its CLI on PATH or its config directory in $HOME.
+_PLATFORM_MARKERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    # platform: ((binaries), (home-relative dirs))
+    "claude": (("claude",), (".claude",)),
+    "codex": (("codex",), (".codex",)),
+    "cursor": (("cursor-agent", "cursor"), (".cursor",)),
+    "gemini": (("gemini",), (".gemini",)),
+}
+
+
+def detect_platforms() -> list[str]:
+    """Agent platforms actually present on this machine (always includes generic)."""
+    import shutil
+
+    found = []
+    for name, (binaries, dirs) in _PLATFORM_MARKERS.items():
+        if any(shutil.which(b) for b in binaries) or any((Path.home() / d).is_dir() for d in dirs):
+            found.append(name)
+    found.append("generic")  # AGENTS.md works for everything else (aider, opencode, …)
+    return found
+
+
 # Agent CLIs we can auto-wire as incident responders, in preference order.
 AGENT_RESPONDER_COMMANDS = [
     ("claude", 'claude -p "Respond to the Cirdan incident brief at {brief_file}"'),

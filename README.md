@@ -132,7 +132,8 @@ cirdan actions run <action-id> --yes
 cirdan verify <act-record-id>       # did the system actually recover?
 cirdan watch .                      # foreground event stream
 cirdan serve-mcp                    # MCP server over stdio
-cirdan install --project            # teach agents in this repo to use Cirdan
+cirdan install --project            # guided setup: agents + MCP + responder + map + daemon
+cirdan setup                        # re-run the guided setup, step by step
 ```
 
 ## Always ON
@@ -150,13 +151,24 @@ One instance per project: a second `cirdand serve` (or `cirdan watch`) against t
 ## Agent integration
 
 ```bash
-cirdan install --project             # all platforms, into this repo
+cirdan install --project             # full guided setup (recommended, see below)
+cirdan setup                         # re-run the guided setup anytime, step by step
 cirdan install --platform claude     # .claude/skills/cirdan/SKILL.md + CLAUDE.md + .mcp.json
 cirdan install --platform codex      # AGENTS.md + .codex/cirdan.md
 cirdan install --platform cursor     # .cursor/rules/cirdan.mdc + .cursor/mcp.json
 cirdan install --platform gemini     # GEMINI.md
 cirdan install --platform generic    # .agents/skills/cirdan/SKILL.md + AGENTS.md
 ```
+
+`cirdan install --project` is a guided setup that leaves Cirdan in full use, not just documented:
+
+1. **detects the agents on your machine** (claude/codex/cursor/gemini config or CLIs) and writes instruction files for exactly those (plus generic `AGENTS.md`)
+2. **registers the MCP server** in `.mcp.json`
+3. **arms the incident responder** so daemon alerts route to your agent
+4. **runs the first map** (graph + artifacts in `cirdan-out/`)
+5. **starts the always-on daemon** (detached; `cirdand status` / `cirdand stop`)
+
+Steps 3–5 are prompted (default yes) or driven by flags for scripts: `--responder/--no-responder`, `--map/--no-map`, `--daemon/--no-daemon`, `--all-platforms`. Re-run any of it later with `cirdan setup`, which shows each step's current state and only proposes what's missing.
 
 Installs are idempotent and never touch content outside Cirdan's own marker block. MCP tools include `query_infra_graph`, `get_node`, `get_neighbors`, `shortest_path`, `get_recent_errors`, `get_logs`, `get_state`, `list_incidents`, `explain_incident`, `list_available_actions`, `execute_action`, `verify_action`, `generate_view`, and more.
 

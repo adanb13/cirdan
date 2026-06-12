@@ -485,63 +485,93 @@ def daemon_stop(
     raise typer.Exit(1)
 
 
+def _flag_decisions(responder: bool | None, do_map: bool | None, daemon: bool | None) -> dict:
+    only: dict[str, bool] = {"agents": True, "mcp": True}
+    for name, flag in (("responder", responder), ("map", do_map), ("daemon", daemon)):
+        if flag is not None:
+            only[name] = flag
+    return only
+
+
+def _setup_summary(root, results: dict) -> None:
+    from cirdan.cli.setup_flow import build_steps
+
+    console.print("\n[bold]Cirdan setup summary[/bold]")
+    for step in build_steps(root, console, status_console):
+        done, state = step.status()
+        mark = "[green]✓[/green]" if done else "[yellow]·[/yellow]"
+        console.print(f"  {mark} {step.name}: {state}")
+    console.print("\nTry: [bold]cirdan query \"what is this running on?\"[/bold] · "
+                  "[bold]cirdan show \"show me the infrastructure map\"[/bold] · "
+                  "[bold]cirdan incidents[/bold]")
+
+
 @app.command()
 def install(
-    platform: str = typer.Option(None, "--platform", help="claude, codex, cursor, gemini, or generic (default: all)."),
+    platform: str = typer.Option(None, "--platform",
+                                 help="claude, codex, cursor, gemini, or generic (default: auto-detect)."),
+    all_platforms: bool = typer.Option(False, "--all-platforms", help="Install for every platform."),
     project: bool = typer.Option(False, "--project", help="Install into the current repo instead of the home directory."),
     path: str = typer.Option(".", "--path", help="Project root (with --project)."),
     responder: bool = typer.Option(None, "--responder/--no-responder",
                                    help="Wire incident auto-response without prompting."),
     responder_command: str = typer.Option(None, "--responder-command",
                                           help="Custom agent command ({brief_file} placeholder)."),
+    do_map: bool = typer.Option(None, "--map/--no-map", help="Run the first map without prompting."),
+    daemon: bool = typer.Option(None, "--daemon/--no-daemon", help="Start cirdand without prompting."),
 ):
-    """Install Cirdan instructions (and MCP registration) into agent platforms."""
-    import sys
+    """Set up Cirdan end-to-end: hook detected agents, register MCP, arm the
+    responder, map the infrastructure, and start the daemon."""
     from pathlib import Path
 
     from cirdan.agents import install as do_install
-    from cirdan.agents.installer import detect_agent_command, write_responder_config
+    from cirdan.agents.installer import PLATFORMS, detect_platforms
 
     root = Path(path).resolve()
-    platforms = [platform] if platform else None
-    written = do_install(platforms=platforms, project=project, root=root)
-    scope = "project" if project else "user"
-    console.print(f"Installed Cirdan agent instructions ({scope} scope):")
-    for name, paths in written.items():
-        console.print(f"  [bold]{name}[/bold]:")
-        for p in paths:
-            console.print(f"    - {p}")
+    if platform:
+        platforms = [platform]
+    elif all_platforms:
+        platforms = list(PLATFORMS)
+    else:
+        platforms = detect_platforms()
+        console.print(f"Detected agent platforms: [bold]{', '.join(platforms)}[/bold]")
 
-    # Incident responder setup: briefs are always written; spawning an agent
-    # needs a command, which we offer to wire up here.
-    if project and responder is not False:
-        command = responder_command
-        agent_name = None
-        if command is None:
-            detected = detect_agent_command()
-            if detected:
-                agent_name, command = detected
-        if command:
-            wire = responder
-            if wire is None and sys.stdin.isatty():
-                wire = typer.confirm(
-                    f"Enable automatic incident response"
-                    + (f" via '{agent_name}'" if agent_name else "")
-                    + f"? (runs: {command})",
-                    default=True,
-                )
-            if wire:
-                config_path = write_responder_config(root, command)
-                console.print(f"\nIncident responder armed in {config_path}:")
-                console.print(f"  [bold]{command}[/bold]")
-                console.print("[dim]cirdand will invoke it when a high/critical incident opens. "
-                              "Test with: cirdan respond <incident-id> --dry-run[/dim]")
-            else:
-                console.print("\n[dim]Responder left in brief-only mode "
-                              "(briefs land in cirdan-out/incidents/briefs/).[/dim]")
+    if not project:
+        written = do_install(platforms=platforms, project=False, root=root)
+        console.print("Installed Cirdan agent instructions (user scope):")
+        for name, paths in written.items():
+            console.print(f"  [bold]{name}[/bold]: {', '.join(paths)}")
+        console.print("\nFor the full setup (map + daemon + responder), run "
+                      "[bold]cirdan install --project[/bold] inside a project.")
+        return
 
-    console.print("\nAgents will now query Cirdan for infrastructure context. "
-                  "Run [bold]cirdan map .[/bold] to build the first graph.")
+    from cirdan.cli.setup_flow import run_guided
+
+    results = run_guided(
+        root, console, status_console,
+        only=_flag_decisions(responder, do_map, daemon),
+        platforms=platforms,
+        responder_command=responder_command,
+    )
+    _setup_summary(root, results)
+
+
+@app.command()
+def setup(
+    path: str = typer.Argument(".", help="Project root."),
+    all_steps: bool = typer.Option(False, "--all", help="Run every step without prompting."),
+):
+    """Walk through Cirdan setup again: shows each step's current state and
+    (re)runs the ones you pick — agents, MCP, responder, map, daemon."""
+    from pathlib import Path
+
+    from cirdan.cli.setup_flow import run_guided
+
+    root = Path(path).resolve()
+    only = {name: True for name in ("agents", "mcp", "responder", "map", "daemon")} if all_steps else None
+    results = run_guided(root, console, status_console, only=only,
+                         interactive=None if not all_steps else False)
+    _setup_summary(root, results)
 
 
 @app.command("serve-mcp")
