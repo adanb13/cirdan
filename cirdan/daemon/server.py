@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 
 from cirdan.adapters.registry import get_adapters
+from cirdan.daemon.lock import DaemonLock
 from cirdan.engine import CirdanEngine
 from cirdan.telemetry.events import docker_event_to_event, k8s_event_to_event
 
@@ -24,6 +25,7 @@ class CirdanDaemon:
         self._wake_incidents = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
         self.running = False
+        self._lock = DaemonLock(engine.config.output_dir / "cirdand.lock")
 
     # -- loop bodies -----------------------------------------------------------
 
@@ -105,6 +107,9 @@ class CirdanDaemon:
 
     async def start(self) -> None:
         engine = self.engine
+        # Refuse to run two daemons against the same project: duplicate watch
+        # loops would double-ingest events and double-fire the responder.
+        self._lock.acquire()
         engine.audit.write("daemon", "cirdand starting", root=str(engine.config.root_path))
         await asyncio.to_thread(engine.refresh_access)
         await asyncio.to_thread(engine.refresh_fingerprint)
@@ -124,11 +129,14 @@ class CirdanDaemon:
 
     async def stop(self) -> None:
         self.running = False
-        for task in self._tasks:
-            task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
-        self._tasks.clear()
-        self.engine.audit.write("daemon", "cirdand stopped")
+        try:
+            for task in self._tasks:
+                task.cancel()
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+            self._tasks.clear()
+            self.engine.audit.write("daemon", "cirdand stopped")
+        finally:
+            self._lock.release()
 
     async def run_forever(self) -> None:
         await self.start()

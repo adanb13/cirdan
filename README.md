@@ -132,6 +132,8 @@ cirdand serve --http --mcp --host 0.0.0.0 --port 8090   # shared team server
 
 The daemon runs supervised loops: access refresh, fingerprint refresh, graph refresh, Docker/Kubernetes event watching, telemetry ingestion, incident detection, verification, and artifact export. A crashing loop logs and restarts; it never takes the daemon down.
 
+One instance per project: a second `cirdand serve` (or `cirdan watch`) against the same project is refused with the running pid. `cirdand status` shows the instance, `cirdand stop` shuts it down.
+
 ## Agent integration
 
 ```bash

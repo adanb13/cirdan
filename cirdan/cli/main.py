@@ -349,6 +349,13 @@ def watch(
         asyncio.run(_run())
     except KeyboardInterrupt:
         console.print("\nstopped.")
+    except Exception as exc:
+        from cirdan.daemon.lock import DaemonAlreadyRunning
+
+        if isinstance(exc, DaemonAlreadyRunning):
+            console.print(f"[red]{exc}[/red] — use [bold]cirdand status[/bold] / [bold]cirdand stop[/bold].")
+            raise typer.Exit(1)
+        raise
 
 
 @daemon_app.command("serve")
@@ -398,6 +405,64 @@ def daemon_serve(
         asyncio.run(_run())
     except KeyboardInterrupt:
         console.print("\nstopped.")
+    except Exception as exc:
+        from cirdan.daemon.lock import DaemonAlreadyRunning
+
+        if isinstance(exc, DaemonAlreadyRunning):
+            console.print(f"[red]{exc}[/red] — use [bold]cirdand status[/bold] / [bold]cirdand stop[/bold].")
+            raise typer.Exit(1)
+        raise
+
+
+@daemon_app.command("status")
+def daemon_status(path: str = typer.Argument(".", help="Project root.")):
+    """Show whether a cirdand instance is running for this project."""
+    from cirdan.daemon.lock import holder
+
+    config = load_config(path)
+    info = holder(config.output_dir / "cirdand.lock")
+    if info is None:
+        console.print("cirdand: [yellow]not running[/yellow] for this project.")
+        raise typer.Exit(3)
+    console.print(f"cirdand: [green]running[/green] (pid {info.get('pid')}, since {info.get('started_at')})")
+
+
+@daemon_app.command("stop")
+def daemon_stop(
+    path: str = typer.Argument(".", help="Project root."),
+    timeout: float = typer.Option(10.0, "--timeout", help="Seconds to wait for shutdown."),
+):
+    """Stop the running cirdand instance for this project."""
+    import os
+    import signal
+    import time
+
+    from cirdan.daemon.lock import holder
+
+    config = load_config(path)
+    lock_path = config.output_dir / "cirdand.lock"
+    info = holder(lock_path)
+    if info is None or not info.get("pid"):
+        console.print("cirdand: [yellow]not running[/yellow] for this project.")
+        raise typer.Exit(3)
+    pid = int(info["pid"])
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        console.print(f"pid {pid} already gone.")
+        raise typer.Exit(0)
+    except PermissionError:
+        console.print(f"[red]no permission to signal pid {pid}[/red] (owned by another user?)")
+        raise typer.Exit(1)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if holder(lock_path) is None:
+            console.print(f"cirdand (pid {pid}) [green]stopped[/green].")
+            return
+        time.sleep(0.3)
+    console.print(f"[yellow]cirdand (pid {pid}) still shutting down after {timeout}s[/yellow] — "
+                  f"check again with cirdand status.")
+    raise typer.Exit(1)
 
 
 @app.command()
