@@ -320,6 +320,143 @@ def actions_run(
             console.print(f"  {mark} {check['name']}: {check['detail']}")
 
 
+graph_app = typer.Typer(help="Contribute agent knowledge to the graph (evidence required).")
+app.add_typer(graph_app, name="graph")
+
+
+def _parse_attrs(pairs: list[str]) -> dict:
+    attrs = {}
+    for pair in pairs or []:
+        if "=" not in pair:
+            console.print(f"[red]--attr needs k=v, got:[/red] {pair}")
+            raise typer.Exit(1)
+        key, value = pair.split("=", 1)
+        attrs[key] = value
+    return attrs
+
+
+def _contribution_guard(fn):
+    from cirdan.graph.contrib import ContributionError
+
+    try:
+        return fn()
+    except ContributionError as exc:
+        console.print(f"[red]rejected:[/red] {exc}")
+        raise typer.Exit(1)
+
+
+@graph_app.command("add-node")
+def graph_add_node(
+    node_id: str = typer.Argument(..., help="Namespaced id, e.g. queue:orders."),
+    type: str = typer.Option(..., "--type", help="Node type, e.g. Queue, Service, Database."),
+    name: str = typer.Option(None, "--name", help="Display name (default: id suffix)."),
+    evidence: list[str] = typer.Option(..., "--evidence", help="Source quote (repeatable)."),
+    attr: list[str] = typer.Option(None, "--attr", help="k=v attribute (repeatable)."),
+    ambiguous: bool = typer.Option(False, "--ambiguous", help="Mark AMBIGUOUS instead of INFERRED."),
+    agent: str = typer.Option("cli", "--agent", help="Contributing agent name."),
+    path: str = typer.Option(".", "--path"),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
+):
+    """Contribute a node the scanners missed (evidence required, INFERRED-capped)."""
+    from cirdan.engine import CirdanEngine
+    from cirdan.graph.contrib import contribute_node
+    from cirdan.graph.schema import Confidence
+
+    engine = CirdanEngine.open(path, system=system)
+    node = _contribution_guard(lambda: contribute_node(
+        engine, node_id, type=type, name=name or node_id.split(":", 1)[1],
+        evidence=list(evidence), attrs=_parse_attrs(attr), agent=agent,
+        confidence=Confidence.AMBIGUOUS if ambiguous else Confidence.INFERRED,
+    ))
+    console.print(f"[green]added[/green] {node.id} ({node.type}, {node.confidence.value})")
+
+
+@graph_app.command("add-edge")
+def graph_add_edge(
+    source: str = typer.Argument(..., help="Source node id or name."),
+    target: str = typer.Argument(..., help="Target node id or name."),
+    relation: str = typer.Argument(..., help="e.g. CONNECTS_TO, DEPENDS_ON, DEPLOYS."),
+    evidence: list[str] = typer.Option(..., "--evidence", help="Source quote (repeatable)."),
+    attr: list[str] = typer.Option(None, "--attr", help="k=v attribute (repeatable)."),
+    ambiguous: bool = typer.Option(False, "--ambiguous", help="Mark AMBIGUOUS instead of INFERRED."),
+    agent: str = typer.Option("cli", "--agent", help="Contributing agent name."),
+    path: str = typer.Option(".", "--path"),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
+):
+    """Contribute a relationship between existing nodes (evidence required)."""
+    from cirdan.engine import CirdanEngine
+    from cirdan.graph.contrib import contribute_edge
+    from cirdan.graph.schema import Confidence
+
+    engine = CirdanEngine.open(path, system=system)
+    edge = _contribution_guard(lambda: contribute_edge(
+        engine, source, target, relation, evidence=list(evidence),
+        attrs=_parse_attrs(attr), agent=agent,
+        confidence=Confidence.AMBIGUOUS if ambiguous else Confidence.INFERRED,
+    ))
+    console.print(f"[green]added[/green] {edge.source} —{edge.relation.value}→ {edge.target} "
+                  f"({edge.confidence.value})")
+
+
+@graph_app.command("annotate")
+def graph_annotate(
+    ref: str = typer.Argument(..., help="Node id or name."),
+    evidence: list[str] = typer.Option(None, "--evidence", help="Source quote (repeatable)."),
+    attr: list[str] = typer.Option(None, "--attr", help="k=v attribute (repeatable)."),
+    agent: str = typer.Option("cli", "--agent"),
+    path: str = typer.Option(".", "--path"),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
+):
+    """Attach evidence or attributes to an existing node."""
+    from cirdan.engine import CirdanEngine
+    from cirdan.graph.contrib import annotate_node
+
+    engine = CirdanEngine.open(path, system=system)
+    node = _contribution_guard(lambda: annotate_node(
+        engine, ref, evidence=list(evidence) if evidence else None,
+        attrs=_parse_attrs(attr), agent=agent,
+    ))
+    console.print(f"[green]annotated[/green] {node.id} ({len(node.evidence)} evidence items)")
+
+
+@app.command()
+def enrich(
+    path: str = typer.Argument(".", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Write/print the brief without invoking the agent."),
+    command: str = typer.Option(None, "--command", help="Agent command template ({brief_file} placeholder)."),
+    timeout: float = typer.Option(900.0, "--timeout", help="Seconds before the agent run is killed."),
+):
+    """Hand your agent an enrichment brief so it can contribute the knowledge
+    the deterministic scanners missed (docs, implied dependencies, IaC links)."""
+    import asyncio
+
+    from cirdan.engine import CirdanEngine
+    from cirdan.enrich import build_enrichment_brief, resolve_enrich_command, run_enrichment
+
+    engine = CirdanEngine.open(path, system=system)
+    brief_file = build_enrichment_brief(engine)
+    console.print(f"Brief: [bold]{brief_file}[/bold]")
+    template = resolve_enrich_command(engine, command)
+    if template is None:
+        console.print("[yellow]No agent CLI detected[/yellow] — pass --command "
+                      "'your-agent {brief_file}' or work through the brief manually.")
+        raise typer.Exit(1)
+    if dry_run:
+        console.print(f"Would run: [bold]{template.format(brief_file=brief_file)}[/bold]")
+        return
+    ok, diff = asyncio.run(run_enrichment(engine, template, brief_file, timeout=timeout))
+    color = "green" if ok else "red"
+    console.print(f"agent run: [{color}]{'ok' if ok else 'failed'}[/{color}]")
+    console.print(f"contributed: [bold]{len(diff['nodes'])}[/bold] nodes, "
+                  f"[bold]{len(diff['edges'])}[/bold] edges")
+    for node in diff["nodes"]:
+        console.print(f"  + {node.id} ({node.type}) — {node.evidence[0] if node.evidence else ''}")
+    for edge in diff["edges"]:
+        console.print(f"  + {edge.source} —{edge.relation.value}→ {edge.target} — "
+                      f"{edge.evidence[0] if edge.evidence else ''}")
+
+
 @app.command()
 def respond(
     incident_id: str = typer.Argument(..., help="Incident id (or prefix) to respond to."),
@@ -542,9 +679,11 @@ def daemon_stop(
     raise typer.Exit(1)
 
 
-def _flag_decisions(responder: bool | None, do_map: bool | None, daemon: bool | None) -> dict:
+def _flag_decisions(responder: bool | None, do_map: bool | None, daemon: bool | None,
+                    enrich: bool | None = None) -> dict:
     only: dict[str, bool] = {"agents": True, "mcp": True}
-    for name, flag in (("responder", responder), ("map", do_map), ("daemon", daemon)):
+    for name, flag in (("responder", responder), ("map", do_map), ("daemon", daemon),
+                       ("enrich", enrich)):
         if flag is not None:
             only[name] = flag
     return only
@@ -576,6 +715,8 @@ def install(
                                           help="Custom agent command ({brief_file} placeholder)."),
     do_map: bool = typer.Option(None, "--map/--no-map", help="Run the first map without prompting."),
     daemon: bool = typer.Option(None, "--daemon/--no-daemon", help="Start cirdand without prompting."),
+    enrich: bool = typer.Option(None, "--enrich/--no-enrich",
+                                help="Run the agent enrichment pass (costs agent tokens)."),
 ):
     """Set up Cirdan end-to-end: hook detected agents, register MCP, arm the
     responder, map the infrastructure, and start the daemon."""
@@ -606,7 +747,7 @@ def install(
 
     results = run_guided(
         root, console, status_console,
-        only=_flag_decisions(responder, do_map, daemon),
+        only=_flag_decisions(responder, do_map, daemon, enrich),
         platforms=platforms,
         responder_command=responder_command,
     )
@@ -617,17 +758,21 @@ def install(
 def setup(
     path: str = typer.Argument(".", help="Project root."),
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
-    all_steps: bool = typer.Option(False, "--all", help="Run every step without prompting."),
+    all_steps: bool = typer.Option(False, "--all", help="Run every step without prompting (except enrich)."),
+    enrich: bool = typer.Option(None, "--enrich/--no-enrich",
+                                help="Run the agent enrichment pass (costs agent tokens)."),
 ):
     """Walk through Cirdan setup again: shows each step's current state and
-    (re)runs the ones you pick — agents, MCP, responder, map, daemon."""
+    (re)runs the ones you pick — agents, MCP, responder, map, daemon, enrich."""
     from pathlib import Path
 
     from cirdan.cli.setup_flow import run_guided
 
     root = Path(path).resolve()
-    only = {name: True for name in ("agents", "mcp", "responder", "map", "daemon")} if all_steps else None
-    results = run_guided(root, console, status_console, only=only,
+    only = {name: True for name in ("agents", "mcp", "responder", "map", "daemon")} if all_steps else {}
+    if enrich is not None:
+        only["enrich"] = enrich
+    results = run_guided(root, console, status_console, only=only or None,
                          interactive=None if not all_steps else False, system=system)
     _setup_summary(root, results, system=system)
 

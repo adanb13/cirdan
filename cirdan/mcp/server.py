@@ -25,7 +25,10 @@ def build_mcp_server(engine: CirdanEngine):
             "Cirdan maps and watches the live infrastructure this session can access. "
             "Query it before answering questions about runtime, deployment, services, "
             "dependencies, logs, state, errors, or incidents. Write actions execute "
-            "through the session's own access and are recorded and verified."
+            "through the session's own access and are recorded and verified. "
+            "The graph is writable: contribute relationships you learn from docs or "
+            "code via upsert_edge/upsert_node/annotate_node (evidence required; your "
+            "claims are recorded as INFERRED, never EXTRACTED)."
         ),
     )
 
@@ -219,6 +222,66 @@ def build_mcp_server(engine: CirdanEngine):
         if record is None:
             return _dump({"error": f"no action record '{record_id}'"})
         return _dump(_verify(engine, record))
+
+    # -- contributions (the agent-built lane) -------------------------------------------
+
+    @mcp.tool()
+    def upsert_node(node_id: str, type: str, name: str, evidence: list[str],
+                    attrs: dict | None = None, ambiguous: bool = False) -> str:
+        """Contribute a node the scanners missed. Evidence quotes required; recorded as INFERRED."""
+        from cirdan.graph.contrib import ContributionError, contribute_node
+        from cirdan.graph.schema import Confidence
+
+        try:
+            node = contribute_node(engine, node_id, type=type, name=name, evidence=evidence,
+                                   attrs=attrs, agent="mcp",
+                                   confidence=Confidence.AMBIGUOUS if ambiguous else Confidence.INFERRED)
+        except ContributionError as exc:
+            return _dump({"error": str(exc)})
+        return _dump(node.model_dump())
+
+    @mcp.tool()
+    def upsert_edge(source: str, target: str, relation: str, evidence: list[str],
+                    attrs: dict | None = None, ambiguous: bool = False) -> str:
+        """Contribute a relationship between existing nodes (ids or names). Evidence required."""
+        from cirdan.graph.contrib import ContributionError, contribute_edge
+        from cirdan.graph.schema import Confidence
+
+        try:
+            edge = contribute_edge(engine, source, target, relation, evidence=evidence,
+                                   attrs=attrs, agent="mcp",
+                                   confidence=Confidence.AMBIGUOUS if ambiguous else Confidence.INFERRED)
+        except ContributionError as exc:
+            return _dump({"error": str(exc)})
+        return _dump(edge.model_dump())
+
+    @mcp.tool()
+    def annotate_node(node_ref: str, evidence: list[str] | None = None,
+                      attrs: dict | None = None) -> str:
+        """Attach evidence or attributes to an existing node without changing its confidence."""
+        from cirdan.graph.contrib import ContributionError
+        from cirdan.graph.contrib import annotate_node as _annotate
+
+        try:
+            node = _annotate(engine, node_ref, evidence=evidence, attrs=attrs, agent="mcp")
+        except ContributionError as exc:
+            return _dump({"error": str(exc)})
+        return _dump(node.model_dump())
+
+    @mcp.tool()
+    def get_enrichment_targets() -> str:
+        """What the deterministic scanners left unconnected: docs to read, isolated
+        nodes, unlinked IaC, uncertain claims. Contribute findings via upsert_edge."""
+        from cirdan.enrich import enrichment_targets
+
+        targets = enrichment_targets(engine)
+        return _dump({
+            "docs": targets["docs"],
+            "isolated": [n.model_dump() for n in targets["isolated"]],
+            "uncertain": [n.model_dump() for n in targets["uncertain"]][:30],
+            "unlinked_iac": [n.model_dump() for n in targets["unlinked_iac"]],
+            "pipelines_without_deploys": [n.model_dump() for n in targets["pipelines_without_deploys"]],
+        })
 
     # -- views & audit -----------------------------------------------------------------
 

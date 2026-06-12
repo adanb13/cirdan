@@ -109,6 +109,26 @@ def build_infra_report(
             add(f"- **{inc.get('title')}** (status: {inc.get('status')}, started {inc.get('started_at')})")
         add("")
 
+    # -- agent contributions ------------------------------------------------------
+    agent_nodes = [n for n in nodes if n.source_adapter.startswith("agent:")]
+    agent_edges = [
+        e for e in edges if str(e.attrs.get("source_adapter", "")).startswith("agent:")
+    ]
+    if agent_nodes or agent_edges:
+        add("## Agent-contributed knowledge")
+        add("")
+        add("Added by AI agents from docs/code the scanners can't parse (all INFERRED, evidence-backed):")
+        add("")
+        for node in agent_nodes:
+            who = node.source_adapter.split(":", 1)[-1]
+            ev = redact_text(node.evidence[0]) if node.evidence else ""
+            add(f"- **{node.name}** ({node.type}) — by {who}: {ev}")
+        for edge in agent_edges:
+            who = str(edge.attrs.get("source_adapter", "agent:?")).split(":", 1)[-1]
+            ev = redact_text(edge.evidence[0]) if edge.evidence else ""
+            add(f"- `{edge.source}` —{edge.relation.value}→ `{edge.target}` — by {who}: {ev}")
+        add("")
+
     # -- uncertainty ------------------------------------------------------------
     uncertain = [
         n for n in nodes

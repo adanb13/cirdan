@@ -26,6 +26,7 @@ DAEMON_CONFIRM_TIMEOUT = 20.0
 class SetupStep:
     name = "step"
     description = ""
+    prompt_default_yes = True  # EnrichStep overrides: agent runs cost tokens
 
     def __init__(self, root: Path, console: Console, status_console: Console, system: bool = False):
         self.root = root
@@ -211,6 +212,40 @@ class DaemonStep(SetupStep):
         return False
 
 
+class EnrichStep(SetupStep):
+    name = "enrich"
+    description = "Let your agent contribute doc/code knowledge to the graph (costs agent tokens)"
+    prompt_default_yes = False
+
+    def status(self) -> tuple[bool, str]:
+        from cirdan.engine import CirdanEngine
+        from cirdan.graph.contrib import agent_contributions
+
+        engine = CirdanEngine(self._config())
+        contributions = agent_contributions(engine)
+        total = len(contributions["nodes"]) + len(contributions["edges"])
+        if total:
+            return True, f"{total} agent contributions in the graph"
+        return False, "no agent contributions yet"
+
+    def run(self) -> bool:
+        import asyncio
+
+        from cirdan.engine import CirdanEngine
+        from cirdan.enrich import build_enrichment_brief, resolve_enrich_command, run_enrichment
+
+        engine = CirdanEngine(self._config())
+        template = resolve_enrich_command(engine, None)
+        if template is None:
+            self.console.print("  [yellow]no known agent CLI found[/yellow] — run `cirdan enrich --command …` manually")
+            return False
+        brief = build_enrichment_brief(engine)
+        self.console.print(f"  brief: {brief}")
+        ok, diff = asyncio.run(run_enrichment(engine, template, brief))
+        self.console.print(f"  contributed {len(diff['nodes'])} nodes, {len(diff['edges'])} edges")
+        return ok
+
+
 def build_steps(root: Path, console: Console, status_console: Console,
                 platforms: list[str] | None = None,
                 responder_command: str | None = None,
@@ -221,6 +256,7 @@ def build_steps(root: Path, console: Console, status_console: Console,
         ResponderStep(root, console, status_console, system=system, command=responder_command),
         MapStep(root, console, status_console, system=system),
         DaemonStep(root, console, status_console, system=system),
+        EnrichStep(root, console, status_console, system=system),
     ]
 
 
@@ -250,7 +286,7 @@ def run_guided(root: Path, console: Console, status_console: Console,
         if step.name in only:
             decision = only[step.name]
         elif interactive:
-            decision = typer.confirm("  run this step?", default=not done)
+            decision = typer.confirm("  run this step?", default=(not done) and step.prompt_default_yes)
         else:
             decision = False
         if decision:

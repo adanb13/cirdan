@@ -32,6 +32,13 @@ Commands:
     cirdan actions run <action-id>    # execute (recorded + verified); add --yes for writes
     cirdan access .                   # what this session can currently reach
 
+The graph is writable: when you learn a relationship from docs or code that
+Cirdan's scanners missed, contribute it (evidence required, recorded as INFERRED):
+
+    cirdan graph add-edge <source> <target> CONNECTS_TO --evidence "README.md: '…'"
+    cirdan graph add-node queue:orders --type Queue --evidence "docs/arch.md: '…'"
+    cirdan enrich --dry-run           # see what the scanners left unconnected
+
 Artifacts land in `cirdan-out/`: `infra.graph.json` (machine-readable graph),
 `INFRA_REPORT.md`, `infra.html`, `fingerprint.json`, `access.json`.
 
@@ -173,6 +180,24 @@ AGENT_RESPONDER_COMMANDS = [
     ("gemini", 'gemini -p "Respond to the Cirdan incident brief at {brief_file}"'),
     ("aider", 'aider --yes --message "Respond to the Cirdan incident brief at {brief_file}"'),
 ]
+
+
+# Same CLIs, pointed at a graph-enrichment brief instead of an incident.
+AGENT_ENRICH_COMMANDS = [
+    ("claude", 'claude -p "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
+    ("codex", 'codex exec "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
+    ("gemini", 'gemini -p "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
+    ("aider", 'aider --yes --message "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
+]
+
+
+def detect_enrich_command() -> tuple[str, str] | None:
+    import shutil
+
+    for name, command in AGENT_ENRICH_COMMANDS:
+        if shutil.which(name):
+            return name, command
+    return None
 
 
 def detect_agent_command() -> tuple[str, str] | None:

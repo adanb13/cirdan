@@ -211,6 +211,20 @@ Every node and edge carries **evidence** and a **confidence label** (`EXTRACTED`
 
 Cirdan maintains a **static graph** (what the repo says should exist: Compose, Kubernetes YAML, Terraform/OpenTofu, Helm, CI, SQL, nginx, systemd units) and a **live graph** (what actually exists: Docker Engine, Kubernetes API, AWS, systemd, Prometheus), merges them, and reports drift — declared-but-not-running, running-but-undeclared, degraded capacity, unhealthy state.
 
+## Agents don't just read the graph — they build it
+
+Like Graphify's hybrid model (deterministic tree-sitter lane for code, LLM lane for docs/semantics), Cirdan's graph has two lanes. Adapters extract what's parseable — that's the always-on, token-free lane, labeled `EXTRACTED`. Agents contribute what isn't: relationships described in READMEs and runbooks, implied by code, or known to operators. Contributions require evidence quotes, are capped at `INFERRED`/`AMBIGUOUS` (an agent can never overwrite a deterministic claim), and carry the contributing agent's name.
+
+```bash
+cirdan enrich                # hand your agent a brief of what the scanners left
+                             # unconnected (isolated nodes, unlinked IaC, docs to read)
+cirdan enrich --dry-run      # just see the brief
+cirdan graph add-edge payment-worker orders DEPENDS_ON \
+  --evidence "ARCHITECTURE.md: 'the worker drains the orders queue nightly'"
+```
+
+MCP-connected agents get the same surface as tools: `upsert_node`, `upsert_edge`, `annotate_node`, `get_enrichment_targets`. Contributions appear in `INFRA_REPORT.md` under "Agent-contributed knowledge" and as dashed edges in `infra.html`.
+
 ## Incident responder: the agent loop
 
 Detection is automatic; response can be too. When a high/critical incident opens, the daemon writes an **incident brief** (`cirdan-out/incidents/briefs/<id>.md` — evidence, blast radius, available actions, instructions) and, if a responder command is configured, **invokes your agent against it**:

@@ -53,6 +53,43 @@ def render_command(template: str, incident: Incident, brief_file: str) -> list[s
     return shlex.split(rendered)
 
 
+async def run_agent_command(
+    engine: CirdanEngine, argv: list[str], label: str, timeout: float, subject: str = ""
+) -> tuple[bool, str]:
+    """Spawn an agent command (no shell), bounded by timeout, fully audited.
+
+    Returns (ok, note) — note is a short human-readable outcome line.
+    Shared by the incident responder and `cirdan enrich`.
+    """
+    started = now_iso()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=str(engine.config.root_path),
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            engine.audit.write("responder", f"{label} for {subject or 'task'} timed out after {timeout}s",
+                               command=argv[0])
+            return False, f"{label} timed out after {timeout}s"
+        output = (stdout or b"").decode(errors="replace")[-4000:]
+        ok = proc.returncode == 0
+        engine.audit.write(
+            "responder",
+            f"{label} for {subject or 'task'} exited {proc.returncode}",
+            command=argv[0], started=started, output_tail=output[-1000:],
+        )
+        return ok, f"{label} invoked ({argv[0]}), exit {proc.returncode}"
+    except (OSError, ValueError) as exc:
+        engine.audit.write("responder", f"{label} for {subject or 'task'} failed to start: {exc}")
+        return False, f"{label} failed to start: {exc}"
+
+
 class IncidentResponder:
     def __init__(self, engine: CirdanEngine):
         self.engine = engine
@@ -146,38 +183,9 @@ class IncidentResponder:
             return ok
 
     async def _run(self, argv: list[str], incident: Incident, label: str, timeout: float) -> bool:
-        started = now_iso()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=str(self.engine.config.root_path),
-            )
-            try:
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                self.engine.audit.write(
-                    "responder", f"{label} for {incident.id} timed out after {timeout}s",
-                    command=argv[0],
-                )
-                self._note(incident, f"{label} timed out after {timeout}s")
-                return False
-            output = (stdout or b"").decode(errors="replace")[-4000:]
-            ok = proc.returncode == 0
-            self.engine.audit.write(
-                "responder",
-                f"{label} for {incident.id} exited {proc.returncode}",
-                command=argv[0], started=started, output_tail=output[-1000:],
-            )
-            self._note(incident, f"{label} invoked ({argv[0]}), exit {proc.returncode}")
-            return ok
-        except (OSError, ValueError) as exc:
-            self.engine.audit.write("responder", f"{label} for {incident.id} failed to start: {exc}")
-            self._note(incident, f"{label} failed to start: {exc}")
-            return False
+        ok, note = await run_agent_command(self.engine, argv, label, timeout, subject=incident.id)
+        self._note(incident, note)
+        return ok
 
     def _note(self, incident: Incident, note: str) -> None:
         current = self.engine.incidents.get(incident.id) or incident
