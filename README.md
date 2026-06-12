@@ -173,6 +173,10 @@ cirdan status --system       # the system daemon
 
 System scope lives in `~/.cirdan/` (graph, incidents, briefs, daemon, optional `cirdan.yaml` for responder/webhook settings) and skips repo scanning — declared-vs-live drift stays a per-project concern, while the system daemon watches the live world: every container, cluster, cloud account, and failing unit. Project daemons and the system daemon run independently.
 
+Once `~/.cirdan/` exists, the flag is mostly optional: a command run outside any cirdan project (no `cirdan.yaml`, `cirdan-out/`, or registered `.mcp.json`) falls back to the system scope automatically — with a one-line stderr notice — instead of scattering `cirdan-out/` directories or failing in unwritable locations. Inside a project, project scope always wins.
+
+`cirdan setup --system` also hooks your agents at the user level (instruction files whose examples carry `--system`) and registers Cirdan as a **user-scope MCP server** for the agent CLIs that support it — Claude Code and Codex through their own `mcp add`, Cursor and Gemini through their global JSON config — so the MCP tools are available in every project without per-repo setup.
+
 ## Agent integration
 
 ```bash
