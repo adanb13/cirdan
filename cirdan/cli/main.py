@@ -27,6 +27,32 @@ def _attach_progress(engine) -> None:
     engine.progress = lambda message: status_console.print(f"[dim]  · {message}[/dim]")
 
 
+def _scope_notice(requested_path: str) -> None:
+    from pathlib import Path
+
+    status_console.print(
+        f"[dim]no cirdan project at {Path(requested_path).resolve()} — using system scope (~/.cirdan); "
+        f"pass --system to make this explicit, or run [bold]cirdan setup[/bold] in a project directory[/dim]"
+    )
+
+
+def _open_engine(path: str = ".", config_file: str | None = None, system: bool = False):
+    """CirdanEngine.open + the CLI's scope-fallback notice and clean permission errors."""
+    from cirdan.engine import CirdanEngine
+
+    try:
+        engine = CirdanEngine.open(path, config_file=config_file, system=system)
+    except OSError as exc:
+        target = getattr(exc, "filename", None) or "output directory"
+        reason = getattr(exc, "strerror", None) or str(exc)
+        console.print(f"[red]cannot create {target}:[/red] {reason} — run cirdan inside a project "
+                      f"directory, or use --system for the machine scope (set up with: cirdan setup --system)")
+        raise typer.Exit(1)
+    if engine.scope_fallback:
+        _scope_notice(engine.scope_fallback)
+    return engine
+
+
 @daemon_app.callback()
 def _daemon_main():
     """Cirdan always-on daemon."""
@@ -106,12 +132,11 @@ def map(
     json_out: bool = typer.Option(False, "--json", help="Emit the run summary as JSON."),
 ):
     """Fingerprint the environment and build the full infrastructure map + artifacts."""
-    from cirdan.engine import CirdanEngine
     from cirdan.fingerprint.engine import render_fingerprint
     from cirdan.fingerprint import Fingerprint
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     if out:
         engine.config.output.dir = out
     if resolution is not None:
@@ -137,17 +162,16 @@ def map(
 
 @app.command()
 def query(
-    question: str = typer.Argument(..., help='e.g. "what depends on postgres?"'),
+    question: str = typer.Argument(..., help='e.g. "what is running?", "what depends on postgres?"'),
     path: str = typer.Option(".", "--path", help="Project root."),
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     json_out: bool = typer.Option(False, "--json", help="Emit structured JSON."),
 ):
     """Ask the infrastructure graph a question (deterministic, no LLM)."""
-    from cirdan.engine import CirdanEngine
     from cirdan.query import answer_query
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     result = answer_query(engine, question)
     if json_out:
         console.print_json(dump_json(result))
@@ -163,11 +187,10 @@ def show(
     fmt: str = typer.Option("all", "--format", help="html, md, json, term, or all."),
 ):
     """Generate a view of the system on demand (Agentic UI)."""
-    from cirdan.engine import CirdanEngine
     from cirdan.ui.render import render_terminal
     from cirdan.ui.router import build_view
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     spec = build_view(engine, request)
     render_terminal(spec, console)
     if fmt != "term":
@@ -187,10 +210,9 @@ def incidents(
     json_out: bool = typer.Option(False, "--json"),
 ):
     """List incidents (runs a detection pass over current state and telemetry)."""
-    from cirdan.engine import CirdanEngine
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     _attach_progress(engine)
     if detect:
         engine.detect_incidents()
@@ -219,10 +241,9 @@ def explain(
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
 ):
     """Explain an incident or a graph node with its evidence."""
-    from cirdan.engine import CirdanEngine
     from cirdan.query import answer_query
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     report = engine.explain_incident(target)
     if report is not None:
         console.print(report)
@@ -265,10 +286,9 @@ def actions_list(
 ):
     """List actions currently possible against a component."""
     from cirdan.actions import list_actions
-    from cirdan.engine import CirdanEngine
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     specs = list_actions(engine, node)
     if json_out:
         console.print_json(dump_json([s.model_dump() for s in specs]))
@@ -297,10 +317,9 @@ def actions_run(
 ):
     """Execute an action using the session's own access, record it, and verify."""
     from cirdan.actions import execute_action, find_action
-    from cirdan.engine import CirdanEngine
     from cirdan.verify import verify_action
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     spec = find_action(engine, action_id)
     if spec is None:
         console.print(f"[red]Unknown or unavailable action:[/red] {action_id}")
@@ -362,11 +381,10 @@ def graph_add_node(
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
 ):
     """Contribute a node the scanners missed (evidence required, INFERRED-capped)."""
-    from cirdan.engine import CirdanEngine
     from cirdan.graph.contrib import contribute_node
     from cirdan.graph.schema import Confidence
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     node = _contribution_guard(lambda: contribute_node(
         engine, node_id, type=type, name=name or node_id.split(":", 1)[1],
         evidence=list(evidence), attrs=_parse_attrs(attr), agent=agent,
@@ -388,11 +406,10 @@ def graph_add_edge(
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
 ):
     """Contribute a relationship between existing nodes (evidence required)."""
-    from cirdan.engine import CirdanEngine
     from cirdan.graph.contrib import contribute_edge
     from cirdan.graph.schema import Confidence
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     edge = _contribution_guard(lambda: contribute_edge(
         engine, source, target, relation, evidence=list(evidence),
         attrs=_parse_attrs(attr), agent=agent,
@@ -412,10 +429,9 @@ def graph_annotate(
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
 ):
     """Attach evidence or attributes to an existing node."""
-    from cirdan.engine import CirdanEngine
     from cirdan.graph.contrib import annotate_node
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     node = _contribution_guard(lambda: annotate_node(
         engine, ref, evidence=list(evidence) if evidence else None,
         attrs=_parse_attrs(attr), agent=agent,
@@ -435,10 +451,9 @@ def enrich(
     the deterministic scanners missed (docs, implied dependencies, IaC links)."""
     import asyncio
 
-    from cirdan.engine import CirdanEngine
     from cirdan.enrich import build_enrichment_brief, resolve_enrich_command, run_enrichment
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     brief_file = build_enrichment_brief(engine)
     console.print(f"Brief: [bold]{brief_file}[/bold]")
     template = resolve_enrich_command(engine, command)
@@ -471,10 +486,9 @@ def respond(
     """Compose an incident brief and invoke the configured responder agent once."""
     import asyncio
 
-    from cirdan.engine import CirdanEngine
     from cirdan.incidents.responder import IncidentResponder, render_command
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     incident = engine.incidents.get(incident_id)
     if incident is None:
         console.print(f"[red]No incident:[/red] {incident_id}")
@@ -504,10 +518,9 @@ def verify(
 ):
     """Re-verify the outcome of a previously executed action."""
     from cirdan.actions.executor import get_record
-    from cirdan.engine import CirdanEngine
     from cirdan.verify import verify_action
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     record = get_record(engine, record_id)
     if record is None:
         console.print(f"[red]No action record:[/red] {record_id}")
@@ -529,9 +542,8 @@ def watch(
     import asyncio
 
     from cirdan.daemon import CirdanDaemon
-    from cirdan.engine import CirdanEngine
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
 
     def on_event(item: dict) -> None:
         if item["kind"] == "event":
@@ -576,9 +588,8 @@ def daemon_serve(
     import asyncio
 
     from cirdan.daemon import CirdanDaemon
-    from cirdan.engine import CirdanEngine
 
-    engine = CirdanEngine.open(path, config_file=config, system=system)
+    engine = _open_engine(path, config_file=config, system=system)
     if host:
         engine.config.daemon.host = host
     if port:
@@ -620,10 +631,10 @@ def daemon_serve(
 
 
 def _lock_path_for(path: str, system: bool):
-    from cirdan.config import CirdanConfig
+    from cirdan.config import resolve_scope
 
-    config = CirdanConfig.system() if system else load_config(path)
-    return config.output_dir / "cirdand.lock"
+    config, fell_back = resolve_scope(path, system=system)
+    return config.output_dir / "cirdand.lock", fell_back
 
 
 @app.command("status")
@@ -635,12 +646,18 @@ def daemon_status(
     """Show whether a cirdand instance is running for this scope."""
     from cirdan.daemon.lock import holder
 
-    info = holder(_lock_path_for(path, system))
-    scope = "system scope" if system else "this project"
+    lock_path, fell_back = _lock_path_for(path, system)
+    if fell_back:
+        _scope_notice(path)
+    info = holder(lock_path)
+    scope = "system scope" if (system or fell_back) else "this project"
     if info is None:
         console.print(f"cirdand: [yellow]not running[/yellow] for {scope}.")
         raise typer.Exit(3)
-    console.print(f"cirdand: [green]running[/green] (pid {info.get('pid')}, since {info.get('started_at')})")
+    from cirdan.util import iso_to_local
+
+    console.print(f"cirdand: [green]running[/green] (pid {info.get('pid')}, "
+                  f"since {iso_to_local(info.get('started_at'))})")
 
 
 @app.command("stop")
@@ -657,9 +674,11 @@ def daemon_stop(
 
     from cirdan.daemon.lock import holder
 
-    lock_path = _lock_path_for(path, system)
+    lock_path, fell_back = _lock_path_for(path, system)
+    if fell_back:
+        _scope_notice(path)
     info = holder(lock_path)
-    scope = "system scope" if system else "this project"
+    scope = "system scope" if (system or fell_back) else "this project"
     if info is None or not info.get("pid"):
         console.print(f"cirdand: [yellow]not running[/yellow] for {scope}.")
         raise typer.Exit(3)
@@ -701,9 +720,10 @@ def _setup_summary(root, results: dict, system: bool = False) -> None:
         done, state = step.status()
         mark = "[green]✓[/green]" if done else "[yellow]·[/yellow]"
         console.print(f"  {mark} {step.name}: {state}")
-    console.print("\nTry: [bold]cirdan query \"what is this running on?\"[/bold] · "
-                  "[bold]cirdan show \"show me the infrastructure map\"[/bold] · "
-                  "[bold]cirdan incidents[/bold]")
+    flag = " --system" if system else ""
+    console.print(f"\nTry: [bold]cirdan query \"what is this running on?\"{flag}[/bold] · "
+                  f"[bold]cirdan show \"show me the infrastructure map\"{flag}[/bold] · "
+                  f"[bold]cirdan incidents{flag}[/bold]")
 
 
 @app.command()
@@ -789,10 +809,9 @@ def serve_mcp(
     port: int = typer.Option(8080, "--port", help="Port for HTTP transport."),
 ):
     """Serve Cirdan as an MCP server (default: stdio, for agent clients)."""
-    from cirdan.engine import CirdanEngine
     from cirdan.mcp.server import build_mcp_server
 
-    engine = CirdanEngine.open(path, system=system)
+    engine = _open_engine(path, system=system)
     server = build_mcp_server(engine)
     if transport == "stdio":
         server.run(transport="stdio")

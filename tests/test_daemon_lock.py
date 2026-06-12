@@ -61,3 +61,23 @@ async def test_second_daemon_refused(engine):
         assert daemon3.running
     finally:
         await daemon3.stop()
+
+
+def test_iso_to_local():
+    import time
+
+    from cirdan.util import iso_to_local
+
+    old_tz = os.environ.get("TZ")
+    os.environ["TZ"] = "Asia/Kolkata"
+    time.tzset()
+    try:
+        assert iso_to_local("2026-06-12T05:14:51Z").startswith("2026-06-12 10:44:51")
+        assert iso_to_local("garbage") == "garbage"
+        assert iso_to_local(None) == "unknown"
+    finally:
+        if old_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old_tz
+        time.tzset()

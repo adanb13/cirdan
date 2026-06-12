@@ -33,6 +33,8 @@ def _age_seconds(ts: str) -> float:
 class CirdanEngine:
     def __init__(self, config: CirdanConfig):
         self.config = config
+        # Original requested path when open() fell back to the system scope.
+        self.scope_fallback: str | None = None
         out = config.ensure_output_dirs()
         self.audit = AuditWriter(out / "audit.jsonl")
         self.store = GraphStore(config.db_path)
@@ -52,11 +54,15 @@ class CirdanEngine:
 
     @classmethod
     def open(cls, path: str = ".", config_file: str | None = None, system: bool = False) -> "CirdanEngine":
-        from cirdan.config import load_config
+        from pathlib import Path
 
-        if system:
-            return cls(CirdanConfig.system())
-        return cls(load_config(path, config_file))
+        from cirdan.config import resolve_scope
+
+        config, fell_back = resolve_scope(path, system=system, config_file=config_file)
+        engine = cls(config)
+        if fell_back:
+            engine.scope_fallback = str(Path(path).resolve())
+        return engine
 
     # -- access & fingerprint -------------------------------------------------
 

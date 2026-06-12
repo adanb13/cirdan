@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 CONFIG_FILENAMES = ("cirdan.yaml", "cirdan.yml", ".cirdan.yaml")
+DEFAULT_OUTPUT_DIRNAME = "cirdan-out"
 
 # Repo scanners — disabled in system scope, where only the live world matters.
 STATIC_ADAPTER_NAMES = [
@@ -63,7 +65,7 @@ class TelemetryConfig(BaseModel):
 
 
 class OutputConfig(BaseModel):
-    dir: str = "cirdan-out"
+    dir: str = DEFAULT_OUTPUT_DIRNAME
     # Louvain resolution for subsystem grouping: higher → more, smaller communities.
     community_resolution: float = 1.0
 
@@ -154,3 +156,41 @@ def load_config(root: str | os.PathLike = ".", config_file: str | None = None) -
             data = loaded
     data.setdefault("root", str(root_path))
     return CirdanConfig.model_validate(data)
+
+
+def has_project_markers(root: str | os.PathLike = ".") -> bool:
+    """True if `root` looks like a cirdan project: a config file, a cirdan-out/
+    directory, or a cirdan server registered in .mcp.json."""
+    root_path = Path(root).resolve()
+    if any((root_path / name).is_file() for name in CONFIG_FILENAMES):
+        return True
+    if (root_path / DEFAULT_OUTPUT_DIRNAME).is_dir():
+        return True
+    mcp_file = root_path / ".mcp.json"
+    if mcp_file.is_file():
+        try:
+            data = json.loads(mcp_file.read_text())
+            return isinstance(data, dict) and "cirdan" in (data.get("mcpServers") or {})
+        except (OSError, json.JSONDecodeError):
+            pass
+    return False
+
+
+def system_scope_available() -> bool:
+    """True once `cirdan setup --system` has created ~/.cirdan."""
+    return (Path.home() / ".cirdan").is_dir()
+
+
+def resolve_scope(root: str | os.PathLike = ".", system: bool = False,
+                  config_file: str | None = None) -> tuple[CirdanConfig, bool]:
+    """Resolve which scope a command should run in.
+
+    Returns (config, fell_back). Falls back to the machine scope when `root`
+    has no project markers and ~/.cirdan exists, so commands run outside a
+    project use the system graph instead of creating stray cirdan-out dirs
+    (or crashing in unwritable directories like /home)."""
+    if system:
+        return CirdanConfig.system(), False
+    if config_file is None and not has_project_markers(root) and system_scope_available():
+        return CirdanConfig.system(), True
+    return load_config(root, config_file), False

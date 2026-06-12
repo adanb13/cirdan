@@ -12,7 +12,7 @@ import json
 import os
 from pathlib import Path
 
-from cirdan.util import now_iso
+from cirdan.util import iso_to_local, now_iso
 
 try:
     import fcntl
@@ -29,7 +29,7 @@ class DaemonAlreadyRunning(RuntimeError):
         self.path = path
         detail = f"pid {pid}" if pid else "unknown pid"
         if started_at:
-            detail += f", since {started_at}"
+            detail += f", since {iso_to_local(started_at)}"
         super().__init__(f"cirdand already running for this project ({detail})")
 
 

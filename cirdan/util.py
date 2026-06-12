@@ -57,6 +57,17 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def iso_to_local(ts: str | None) -> str:
+    """Render a stored UTC ISO timestamp ('2026-06-12T05:14:51Z') in local time for display."""
+    if not ts:
+        return "unknown"
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return ts
+    return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z").strip()
+
+
 def parse_json(text: str) -> object | None:
     try:
         return json.loads(text)
