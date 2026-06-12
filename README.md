@@ -73,6 +73,19 @@ Two commands are installed:
 | `cirdan` | Human/agent CLI |
 | `cirdand` | Long-running Always ON daemon |
 
+## Upgrading
+
+Nothing happens automatically — PyPI is pull-only, so an installed version keeps working as-is until you upgrade. New installs always get the latest release. Upgrading is one command, matching however you installed:
+
+| Installed via | Upgrade command |
+|---|---|
+| `uv tool install` | `uv tool upgrade cirdanops` |
+| `pipx install` | `pipx upgrade cirdanops` |
+| `pip install` | `pip install -U cirdanops` |
+| Docker | `docker pull ghcr.io/adanb13/cirdan:latest` (then restart the container) |
+
+Two operational notes: existing `cirdan-out/` artifacts and the SQLite graph are compatible across releases so far (a schema-version key + migration will land before 1.0). And the CLI prints a single dim line on stderr when a newer release exists (checked at most once a day, interactive terminals only) — silence it with `CIRDAN_NO_UPDATE_CHECK=1`.
+
 ## First map
 
 ```bash

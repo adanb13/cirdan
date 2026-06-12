@@ -32,11 +32,31 @@ def _daemon_main():
     """Cirdan always-on daemon."""
 
 
+def _nudge_if_outdated() -> None:
+    """One dim stderr line when PyPI has a newer release; humans only, never pipelines."""
+    import sys
+
+    if not sys.stderr.isatty():
+        return
+    try:
+        from cirdan.update_check import check_for_update, upgrade_hint
+
+        newer = check_for_update()
+        if newer:
+            status_console.print(
+                f"[dim]cirdanops {newer} available (you have {cirdan_pkg.__version__}) — "
+                f"{upgrade_hint()}[/dim]"
+            )
+    except Exception:
+        pass
+
+
 @app.callback(invoke_without_command=True)
 def _main(
     ctx: typer.Context,
     version: bool = typer.Option(False, "--version", help="Show version and exit."),
 ):
+    _nudge_if_outdated()
     if version:
         console.print(f"cirdan {cirdan_pkg.__version__}")
         raise typer.Exit()
