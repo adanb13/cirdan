@@ -51,9 +51,11 @@ class CirdanEngine:
                 pass
 
     @classmethod
-    def open(cls, path: str = ".", config_file: str | None = None) -> "CirdanEngine":
+    def open(cls, path: str = ".", config_file: str | None = None, system: bool = False) -> "CirdanEngine":
         from cirdan.config import load_config
 
+        if system:
+            return cls(CirdanConfig.system())
         return cls(load_config(path, config_file))
 
     # -- access & fingerprint -------------------------------------------------

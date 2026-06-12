@@ -1,0 +1,3 @@
+responder:
+  enabled: true
+  command: claude -p "Respond to the Cirdan incident brief at {brief_file}"

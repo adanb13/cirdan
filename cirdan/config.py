@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field
 
 CONFIG_FILENAMES = ("cirdan.yaml", "cirdan.yml", ".cirdan.yaml")
 
+# Repo scanners — disabled in system scope, where only the live world matters.
+STATIC_ADAPTER_NAMES = [
+    "local-files", "docker-compose", "kubernetes-manifests", "terraform",
+    "helm", "github-actions", "nginx", "sql-schema", "systemd-units",
+]
+
 
 class DaemonConfig(BaseModel):
     always_on: bool = True
@@ -93,6 +99,32 @@ class CirdanConfig(BaseModel):
             p = Path(self.storage.path)
             return p if p.is_absolute() else self.root_path / p
         return self.output_dir / "cirdan.db"
+
+    @classmethod
+    def system(cls) -> "CirdanConfig":
+        """Machine-level scope: watch everything the session can reach, no repo scanning.
+
+        Graph, daemon, incidents, and artifacts live in ~/.cirdan; settings come
+        from ~/.cirdan/cirdan.yaml when present. Live adapters are inherently
+        machine/account-wide (docker ps, kubectl, aws), so this is the scope for
+        "watch over ALL my infrastructure".
+        """
+        home = Path.home()
+        base = home / ".cirdan"
+        data: dict = {}
+        cfg_file = base / "cirdan.yaml"
+        if cfg_file.is_file():
+            loaded = yaml.safe_load(cfg_file.read_text()) or {}
+            if isinstance(loaded, dict):
+                data = loaded
+        data["root"] = str(home)
+        data.setdefault("project", "system")
+        data.setdefault("output", {})
+        if not data["output"].get("dir"):
+            data["output"]["dir"] = str(base)
+        config = cls.model_validate(data)
+        config.adapters.disabled = sorted(set(config.adapters.disabled) | set(STATIC_ADAPTER_NAMES))
+        return config
 
     def ensure_output_dirs(self) -> Path:
         out = self.output_dir

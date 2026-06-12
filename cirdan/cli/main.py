@@ -11,7 +11,7 @@ from cirdan.config import load_config
 app = typer.Typer(
     name="cirdan",
     help="Cirdan: AI infrastructure cartographer. Fingerprints, graphs, and watches live systems.",
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
 daemon_app = typer.Typer(
     name="cirdand",
@@ -60,11 +60,17 @@ def _main(
     if version:
         console.print(f"cirdan {cirdan_pkg.__version__}")
         raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        console.print("[bold]Get started:[/bold] cirdan setup        "
+                      "[dim](or: cirdan setup --system to watch this whole machine)[/dim]")
+        raise typer.Exit()
 
 
 @app.command()
 def map(
     path: str = typer.Argument(".", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     live: bool = typer.Option(None, "--live/--no-live", help="Force live discovery on/off (default: auto)."),
     out: str = typer.Option(None, "--out", help="Output directory (default: cirdan-out)."),
     json_out: bool = typer.Option(False, "--json", help="Emit the run summary as JSON."),
@@ -75,7 +81,7 @@ def map(
     from cirdan.fingerprint import Fingerprint
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     if out:
         engine.config.output.dir = out
     _attach_progress(engine)
@@ -101,6 +107,7 @@ def map(
 def query(
     question: str = typer.Argument(..., help='e.g. "what depends on postgres?"'),
     path: str = typer.Option(".", "--path", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     json_out: bool = typer.Option(False, "--json", help="Emit structured JSON."),
 ):
     """Ask the infrastructure graph a question (deterministic, no LLM)."""
@@ -108,7 +115,7 @@ def query(
     from cirdan.query import answer_query
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     result = answer_query(engine, question)
     if json_out:
         console.print_json(dump_json(result))
@@ -120,6 +127,7 @@ def query(
 def show(
     request: str = typer.Argument(..., help='e.g. "show checkout-api as a dependency graph"'),
     path: str = typer.Option(".", "--path", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     fmt: str = typer.Option("all", "--format", help="html, md, json, term, or all."),
 ):
     """Generate a view of the system on demand (Agentic UI)."""
@@ -127,7 +135,7 @@ def show(
     from cirdan.ui.render import render_terminal
     from cirdan.ui.router import build_view
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     spec = build_view(engine, request)
     render_terminal(spec, console)
     if fmt != "term":
@@ -141,6 +149,7 @@ def show(
 @app.command()
 def incidents(
     path: str = typer.Option(".", "--path", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     all: bool = typer.Option(False, "--all", help="Include resolved incidents."),
     detect: bool = typer.Option(True, "--detect/--no-detect", help="Run a detection pass first."),
     json_out: bool = typer.Option(False, "--json"),
@@ -149,7 +158,7 @@ def incidents(
     from cirdan.engine import CirdanEngine
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     _attach_progress(engine)
     if detect:
         engine.detect_incidents()
@@ -175,12 +184,13 @@ def incidents(
 def explain(
     target: str = typer.Argument(..., help="Incident id (or prefix), or a node name."),
     path: str = typer.Option(".", "--path", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
 ):
     """Explain an incident or a graph node with its evidence."""
     from cirdan.engine import CirdanEngine
     from cirdan.query import answer_query
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     report = engine.explain_incident(target)
     if report is not None:
         console.print(report)
@@ -218,6 +228,7 @@ app.add_typer(actions_app, name="actions")
 def actions_list(
     node: str = typer.Argument(..., help="Node id or name, e.g. container:web or checkout-api."),
     path: str = typer.Option(".", "--path"),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     json_out: bool = typer.Option(False, "--json"),
 ):
     """List actions currently possible against a component."""
@@ -225,7 +236,7 @@ def actions_list(
     from cirdan.engine import CirdanEngine
     from cirdan.util import dump_json
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     specs = list_actions(engine, node)
     if json_out:
         console.print_json(dump_json([s.model_dump() for s in specs]))
@@ -248,6 +259,7 @@ def actions_list(
 def actions_run(
     action_id: str = typer.Argument(..., help="Action id from `cirdan actions list`."),
     path: str = typer.Option(".", "--path"),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation for write actions."),
     verify_after: bool = typer.Option(True, "--verify/--no-verify", help="Verify outcome afterwards."),
 ):
@@ -256,7 +268,7 @@ def actions_run(
     from cirdan.engine import CirdanEngine
     from cirdan.verify import verify_action
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     spec = find_action(engine, action_id)
     if spec is None:
         console.print(f"[red]Unknown or unavailable action:[/red] {action_id}")
@@ -284,6 +296,7 @@ def actions_run(
 def respond(
     incident_id: str = typer.Argument(..., help="Incident id (or prefix) to respond to."),
     path: str = typer.Option(".", "--path"),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Write/print the brief and the command without executing."),
 ):
     """Compose an incident brief and invoke the configured responder agent once."""
@@ -292,7 +305,7 @@ def respond(
     from cirdan.engine import CirdanEngine
     from cirdan.incidents.responder import IncidentResponder, render_command
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     incident = engine.incidents.get(incident_id)
     if incident is None:
         console.print(f"[red]No incident:[/red] {incident_id}")
@@ -318,13 +331,14 @@ def respond(
 def verify(
     record_id: str = typer.Argument(..., help="Action record id (act-…)."),
     path: str = typer.Option(".", "--path"),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
 ):
     """Re-verify the outcome of a previously executed action."""
     from cirdan.actions.executor import get_record
     from cirdan.engine import CirdanEngine
     from cirdan.verify import verify_action
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
     record = get_record(engine, record_id)
     if record is None:
         console.print(f"[red]No action record:[/red] {record_id}")
@@ -340,6 +354,7 @@ def verify(
 @app.command()
 def watch(
     path: str = typer.Argument(".", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
 ):
     """Foreground live view: stream runtime events and incident changes (Ctrl-C to stop)."""
     import asyncio
@@ -347,7 +362,7 @@ def watch(
     from cirdan.daemon import CirdanDaemon
     from cirdan.engine import CirdanEngine
 
-    engine = CirdanEngine.open(path)
+    engine = CirdanEngine.open(path, system=system)
 
     def on_event(item: dict) -> None:
         if item["kind"] == "event":
@@ -373,7 +388,7 @@ def watch(
         from cirdan.daemon.lock import DaemonAlreadyRunning
 
         if isinstance(exc, DaemonAlreadyRunning):
-            console.print(f"[red]{exc}[/red] — use [bold]cirdand status[/bold] / [bold]cirdand stop[/bold].")
+            console.print(f"[red]{exc}[/red] — use [bold]cirdan status[/bold] / [bold]cirdan stop[/bold].")
             raise typer.Exit(1)
         raise
 
@@ -381,6 +396,7 @@ def watch(
 @daemon_app.command("serve")
 def daemon_serve(
     path: str = typer.Argument(".", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
     config: str = typer.Option(None, "--config", help="Path to cirdan.yaml."),
     mcp: bool = typer.Option(False, "--mcp", help="Also serve MCP."),
     http: bool = typer.Option(False, "--http", help="Also serve the HTTP API."),
@@ -393,7 +409,7 @@ def daemon_serve(
     from cirdan.daemon import CirdanDaemon
     from cirdan.engine import CirdanEngine
 
-    engine = CirdanEngine.open(path, config_file=config)
+    engine = CirdanEngine.open(path, config_file=config, system=system)
     if host:
         engine.config.daemon.host = host
     if port:
@@ -429,41 +445,54 @@ def daemon_serve(
         from cirdan.daemon.lock import DaemonAlreadyRunning
 
         if isinstance(exc, DaemonAlreadyRunning):
-            console.print(f"[red]{exc}[/red] — use [bold]cirdand status[/bold] / [bold]cirdand stop[/bold].")
+            console.print(f"[red]{exc}[/red] — use [bold]cirdan status[/bold] / [bold]cirdan stop[/bold].")
             raise typer.Exit(1)
         raise
 
 
+def _lock_path_for(path: str, system: bool):
+    from cirdan.config import CirdanConfig
+
+    config = CirdanConfig.system() if system else load_config(path)
+    return config.output_dir / "cirdand.lock"
+
+
+@app.command("status")
 @daemon_app.command("status")
-def daemon_status(path: str = typer.Argument(".", help="Project root.")):
-    """Show whether a cirdand instance is running for this project."""
+def daemon_status(
+    path: str = typer.Argument(".", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Machine-level scope (~/.cirdan)."),
+):
+    """Show whether a cirdand instance is running for this scope."""
     from cirdan.daemon.lock import holder
 
-    config = load_config(path)
-    info = holder(config.output_dir / "cirdand.lock")
+    info = holder(_lock_path_for(path, system))
+    scope = "system scope" if system else "this project"
     if info is None:
-        console.print("cirdand: [yellow]not running[/yellow] for this project.")
+        console.print(f"cirdand: [yellow]not running[/yellow] for {scope}.")
         raise typer.Exit(3)
     console.print(f"cirdand: [green]running[/green] (pid {info.get('pid')}, since {info.get('started_at')})")
 
 
+@app.command("stop")
 @daemon_app.command("stop")
 def daemon_stop(
     path: str = typer.Argument(".", help="Project root."),
+    system: bool = typer.Option(False, "--system", help="Machine-level scope (~/.cirdan)."),
     timeout: float = typer.Option(10.0, "--timeout", help="Seconds to wait for shutdown."),
 ):
-    """Stop the running cirdand instance for this project."""
+    """Stop the running cirdand instance for this scope."""
     import os
     import signal
     import time
 
     from cirdan.daemon.lock import holder
 
-    config = load_config(path)
-    lock_path = config.output_dir / "cirdand.lock"
+    lock_path = _lock_path_for(path, system)
     info = holder(lock_path)
+    scope = "system scope" if system else "this project"
     if info is None or not info.get("pid"):
-        console.print("cirdand: [yellow]not running[/yellow] for this project.")
+        console.print(f"cirdand: [yellow]not running[/yellow] for {scope}.")
         raise typer.Exit(3)
     pid = int(info["pid"])
     try:
@@ -481,116 +510,8 @@ def daemon_stop(
             return
         time.sleep(0.3)
     console.print(f"[yellow]cirdand (pid {pid}) still shutting down after {timeout}s[/yellow] — "
-                  f"check again with cirdand status.")
+                  f"check again with cirdan status.")
     raise typer.Exit(1)
-
-
-def _flag_decisions(responder: bool | None, do_map: bool | None, daemon: bool | None) -> dict:
-    only: dict[str, bool] = {"agents": True, "mcp": True}
-    for name, flag in (("responder", responder), ("map", do_map), ("daemon", daemon)):
-        if flag is not None:
-            only[name] = flag
-    return only
-
-
-def _setup_summary(root, results: dict) -> None:
-    from cirdan.cli.setup_flow import build_steps
-
-    console.print("\n[bold]Cirdan setup summary[/bold]")
-    for step in build_steps(root, console, status_console):
-        done, state = step.status()
-        mark = "[green]✓[/green]" if done else "[yellow]·[/yellow]"
-        console.print(f"  {mark} {step.name}: {state}")
-    console.print("\nTry: [bold]cirdan query \"what is this running on?\"[/bold] · "
-                  "[bold]cirdan show \"show me the infrastructure map\"[/bold] · "
-                  "[bold]cirdan incidents[/bold]")
-
-
-@app.command()
-def install(
-    platform: str = typer.Option(None, "--platform",
-                                 help="claude, codex, cursor, gemini, or generic (default: auto-detect)."),
-    all_platforms: bool = typer.Option(False, "--all-platforms", help="Install for every platform."),
-    project: bool = typer.Option(False, "--project", help="Install into the current repo instead of the home directory."),
-    path: str = typer.Option(".", "--path", help="Project root (with --project)."),
-    responder: bool = typer.Option(None, "--responder/--no-responder",
-                                   help="Wire incident auto-response without prompting."),
-    responder_command: str = typer.Option(None, "--responder-command",
-                                          help="Custom agent command ({brief_file} placeholder)."),
-    do_map: bool = typer.Option(None, "--map/--no-map", help="Run the first map without prompting."),
-    daemon: bool = typer.Option(None, "--daemon/--no-daemon", help="Start cirdand without prompting."),
-):
-    """Set up Cirdan end-to-end: hook detected agents, register MCP, arm the
-    responder, map the infrastructure, and start the daemon."""
-    from pathlib import Path
-
-    from cirdan.agents import install as do_install
-    from cirdan.agents.installer import PLATFORMS, detect_platforms
-
-    root = Path(path).resolve()
-    if platform:
-        platforms = [platform]
-    elif all_platforms:
-        platforms = list(PLATFORMS)
-    else:
-        platforms = detect_platforms()
-        console.print(f"Detected agent platforms: [bold]{', '.join(platforms)}[/bold]")
-
-    if not project:
-        written = do_install(platforms=platforms, project=False, root=root)
-        console.print("Installed Cirdan agent instructions (user scope):")
-        for name, paths in written.items():
-            console.print(f"  [bold]{name}[/bold]: {', '.join(paths)}")
-        console.print("\nFor the full setup (map + daemon + responder), run "
-                      "[bold]cirdan install --project[/bold] inside a project.")
-        return
-
-    from cirdan.cli.setup_flow import run_guided
-
-    results = run_guided(
-        root, console, status_console,
-        only=_flag_decisions(responder, do_map, daemon),
-        platforms=platforms,
-        responder_command=responder_command,
-    )
-    _setup_summary(root, results)
-
-
-@app.command()
-def setup(
-    path: str = typer.Argument(".", help="Project root."),
-    all_steps: bool = typer.Option(False, "--all", help="Run every step without prompting."),
-):
-    """Walk through Cirdan setup again: shows each step's current state and
-    (re)runs the ones you pick — agents, MCP, responder, map, daemon."""
-    from pathlib import Path
-
-    from cirdan.cli.setup_flow import run_guided
-
-    root = Path(path).resolve()
-    only = {name: True for name in ("agents", "mcp", "responder", "map", "daemon")} if all_steps else None
-    results = run_guided(root, console, status_console, only=only,
-                         interactive=None if not all_steps else False)
-    _setup_summary(root, results)
-
-
-@app.command("serve-mcp")
-def serve_mcp(
-    path: str = typer.Argument(".", help="Project root."),
-    transport: str = typer.Option("stdio", "--transport", help="stdio or streamable-http."),
-    port: int = typer.Option(8080, "--port", help="Port for HTTP transport."),
-):
-    """Serve Cirdan as an MCP server (default: stdio, for agent clients)."""
-    from cirdan.engine import CirdanEngine
-    from cirdan.mcp.server import build_mcp_server
-
-    engine = CirdanEngine.open(path)
-    server = build_mcp_server(engine)
-    if transport == "stdio":
-        server.run(transport="stdio")
-    else:
-        server.settings.port = port
-        server.run(transport="streamable-http")
 
 
 @app.command()

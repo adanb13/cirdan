@@ -96,6 +96,9 @@ class IncidentResponder:
         if not any_actions:
             lines.append("- none discovered; investigate with read tools and report findings")
         lines += ["", BRIEF_INSTRUCTIONS.format(incident_id=incident.id)]
+        if self.engine.config.project == "system":
+            lines.append("Note: this incident is in the machine-level (system) scope — "
+                         "append `--system` to every `cirdan` command above.")
 
         briefs_dir = self.engine.config.output_dir / "incidents" / "briefs"
         briefs_dir.mkdir(parents=True, exist_ok=True)

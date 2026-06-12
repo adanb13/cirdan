@@ -18,7 +18,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from cirdan.config import load_config
+from cirdan.config import CirdanConfig, load_config
 
 DAEMON_CONFIRM_TIMEOUT = 20.0
 
@@ -27,10 +27,14 @@ class SetupStep:
     name = "step"
     description = ""
 
-    def __init__(self, root: Path, console: Console, status_console: Console):
+    def __init__(self, root: Path, console: Console, status_console: Console, system: bool = False):
         self.root = root
         self.console = console
         self.status_console = status_console
+        self.system = system
+
+    def _config(self) -> CirdanConfig:
+        return CirdanConfig.system() if self.system else load_config(self.root)
 
     def status(self) -> tuple[bool, str]:
         """(done, human description of current state)."""
@@ -58,19 +62,20 @@ class AgentsStep(SetupStep):
         return False, f"detected: {', '.join(self.platforms)} (missing: {', '.join(missing)})"
 
     def _marker(self, platform: str) -> Path:
+        base = Path.home() if self.system else self.root
         markers = {
-            "claude": self.root / ".claude" / "skills" / "cirdan" / "SKILL.md",
-            "codex": self.root / ".codex" / "cirdan.md",
-            "cursor": self.root / ".cursor" / "rules" / "cirdan.mdc",
-            "gemini": self.root / "GEMINI.md",
-            "generic": self.root / ".agents" / "skills" / "cirdan" / "SKILL.md",
+            "claude": base / ".claude" / "skills" / "cirdan" / "SKILL.md",
+            "codex": base / ("AGENTS.md" if self.system else ".codex/cirdan.md"),
+            "cursor": base / ".cursor" / "rules" / "cirdan.mdc",
+            "gemini": base / "GEMINI.md",
+            "generic": base / ".agents" / "skills" / "cirdan" / "SKILL.md",
         }
-        return markers.get(platform, self.root / "AGENTS.md")
+        return markers.get(platform, base / "AGENTS.md")
 
     def run(self) -> bool:
         from cirdan.agents import install as do_install
 
-        written = do_install(platforms=self.platforms, project=True, root=self.root)
+        written = do_install(platforms=self.platforms, project=not self.system, root=self.root)
         for name, paths in written.items():
             self.console.print(f"  [bold]{name}[/bold]: {', '.join(Path(p).name for p in paths)}")
         return True
@@ -81,6 +86,8 @@ class McpStep(SetupStep):
     description = "Register the Cirdan MCP server"
 
     def status(self) -> tuple[bool, str]:
+        if self.system:
+            return True, "n/a at system scope (register per project: cirdan install --project)"
         path = self.root / ".mcp.json"
         try:
             data = json.loads(path.read_text())
@@ -91,6 +98,9 @@ class McpStep(SetupStep):
         return False, "not registered"
 
     def run(self) -> bool:
+        if self.system:
+            self.console.print("  skipped: MCP registration is per-project (cirdan install --project)")
+            return True
         from cirdan.agents.installer import _merge_mcp_json
 
         _merge_mcp_json(self.root / ".mcp.json")
@@ -107,7 +117,7 @@ class ResponderStep(SetupStep):
         self.command = command
 
     def status(self) -> tuple[bool, str]:
-        config = load_config(self.root)
+        config = self._config()
         if config.responder.command:
             return True, f"armed: {config.responder.command.split()[0]} …"
         return False, "brief-only mode (no agent command)"
@@ -122,8 +132,10 @@ class ResponderStep(SetupStep):
                 self.console.print("  [yellow]no known agent CLI found[/yellow] — set responder.command manually")
                 return False
             _, command = detected
-        path = write_responder_config(self.root, command)
-        self.console.print(f"  responder.command set in {path.name}: [bold]{command}[/bold]")
+        target = (Path.home() / ".cirdan") if self.system else self.root
+        target.mkdir(parents=True, exist_ok=True)
+        path = write_responder_config(target, command)
+        self.console.print(f"  responder.command set in {path}: [bold]{command}[/bold]")
         return True
 
 
@@ -132,8 +144,7 @@ class MapStep(SetupStep):
     description = "Map the infrastructure (first graph + artifacts)"
 
     def status(self) -> tuple[bool, str]:
-        config = load_config(self.root)
-        graph = config.output_dir / "infra.graph.json"
+        graph = self._config().output_dir / "infra.graph.json"
         if graph.is_file():
             age_min = (time.time() - graph.stat().st_mtime) / 60
             return True, f"mapped {int(age_min)} min ago ({graph})"
@@ -142,7 +153,7 @@ class MapStep(SetupStep):
     def run(self) -> bool:
         from cirdan.engine import CirdanEngine
 
-        engine = CirdanEngine.open(str(self.root))
+        engine = CirdanEngine(self._config())
         engine.progress = lambda m: self.status_console.print(f"[dim]  · {m}[/dim]")
         summary = engine.map()
         self.console.print(f"  graph: {summary['nodes']} nodes, {summary['edges']} edges, "
@@ -155,7 +166,7 @@ class DaemonStep(SetupStep):
     description = "Start the always-on daemon (watch, detect, respond)"
 
     def _lock_path(self) -> Path:
-        return load_config(self.root).output_dir / "cirdand.lock"
+        return self._config().output_dir / "cirdand.lock"
 
     def status(self) -> tuple[bool, str]:
         from cirdan.daemon.lock import holder
@@ -178,11 +189,12 @@ class DaemonStep(SetupStep):
                 self.console.print("  [red]cirdand binary not found[/red]")
                 return False
             binary = Path(which)
-        config = load_config(self.root)
+        config = self._config()
         out = config.ensure_output_dirs()
         log = (out / "cirdand.log").open("a")
+        argv = [str(binary), "serve"] + (["--system"] if self.system else [str(self.root)])
         subprocess.Popen(
-            [str(binary), "serve", str(self.root)],
+            argv,
             stdout=log, stderr=log, stdin=subprocess.DEVNULL,
             start_new_session=True, cwd=str(self.root),
         )
@@ -201,13 +213,14 @@ class DaemonStep(SetupStep):
 
 def build_steps(root: Path, console: Console, status_console: Console,
                 platforms: list[str] | None = None,
-                responder_command: str | None = None) -> list[SetupStep]:
+                responder_command: str | None = None,
+                system: bool = False) -> list[SetupStep]:
     return [
-        AgentsStep(root, console, status_console, platforms=platforms),
-        McpStep(root, console, status_console),
-        ResponderStep(root, console, status_console, command=responder_command),
-        MapStep(root, console, status_console),
-        DaemonStep(root, console, status_console),
+        AgentsStep(root, console, status_console, system=system, platforms=platforms),
+        McpStep(root, console, status_console, system=system),
+        ResponderStep(root, console, status_console, system=system, command=responder_command),
+        MapStep(root, console, status_console, system=system),
+        DaemonStep(root, console, status_console, system=system),
     ]
 
 
@@ -215,7 +228,8 @@ def run_guided(root: Path, console: Console, status_console: Console,
                interactive: bool | None = None,
                only: dict[str, bool] | None = None,
                platforms: list[str] | None = None,
-               responder_command: str | None = None) -> dict[str, bool]:
+               responder_command: str | None = None,
+               system: bool = False) -> dict[str, bool]:
     """Run the setup flow.
 
     `only` maps step name → forced decision (True run / False skip); steps not
@@ -229,7 +243,7 @@ def run_guided(root: Path, console: Console, status_console: Console,
     only = only or {}
     results: dict[str, bool] = {}
     for step in build_steps(root, console, status_console, platforms=platforms,
-                            responder_command=responder_command):
+                            responder_command=responder_command, system=system):
         done, state = step.status()
         console.print(f"\n[bold]{step.name}[/bold] — {step.description}")
         console.print(f"  current: {state}")

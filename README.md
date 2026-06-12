@@ -146,7 +146,20 @@ cirdand serve --http --mcp --host 0.0.0.0 --port 8090   # shared team server
 
 The daemon runs supervised loops: access refresh, fingerprint refresh, graph refresh, Docker/Kubernetes event watching, telemetry ingestion, incident detection, verification, and artifact export. A crashing loop logs and restarts; it never takes the daemon down.
 
-One instance per project: a second `cirdand serve` (or `cirdan watch`) against the same project is refused with the running pid. `cirdand status` shows the instance, `cirdand stop` shuts it down.
+One instance per scope: a second `cirdand serve` (or `cirdan watch`) against the same scope is refused with the running pid. `cirdan status` / `cirdan stop` (also available on `cirdand`) inspect and shut it down.
+
+## Watch the whole machine
+
+Projects aren't the only scope. The live adapters (Docker, Kubernetes, AWS, systemd) see everything the session can reach regardless of directory — so Cirdan has a **system scope** that watches all of it autonomously, independent of any repo:
+
+```bash
+cirdan setup --system        # guided: map everything + start the machine-level daemon
+cirdan map --system          # fingerprint + graph everything this session can reach
+cirdan query "what broke?" --system
+cirdan status --system       # the system daemon
+```
+
+System scope lives in `~/.cirdan/` (graph, incidents, briefs, daemon, optional `cirdan.yaml` for responder/webhook settings) and skips repo scanning — declared-vs-live drift stays a per-project concern, while the system daemon watches the live world: every container, cluster, cloud account, and failing unit. Project daemons and the system daemon run independently.
 
 ## Agent integration
 
