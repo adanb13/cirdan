@@ -5,3 +5,15 @@ cirdan-out/
 .pytest_cache/
 dist/
 build/
+
+# Files `cirdan install --project` generates when run inside the demo —
+# machine-specific, never to be committed.
+examples/demo/CLAUDE.md
+examples/demo/AGENTS.md
+examples/demo/GEMINI.md
+examples/demo/cirdan.yaml
+examples/demo/.claude/
+examples/demo/.codex/
+examples/demo/.cursor/
+examples/demo/.agents/
+examples/demo/.mcp.json
