@@ -26,7 +26,7 @@ DAEMON_CONFIRM_TIMEOUT = 20.0
 class SetupStep:
     name = "step"
     description = ""
-    prompt_default_yes = True  # EnrichStep overrides: agent runs cost tokens
+    prompt_default_yes = True
 
     def __init__(self, root: Path, console: Console, status_console: Console, system: bool = False):
         self.root = root
@@ -40,6 +40,9 @@ class SetupStep:
     def status(self) -> tuple[bool, str]:
         """(done, human description of current state)."""
         raise NotImplementedError
+
+    def prompt_default(self, done: bool) -> bool:
+        return (not done) and self.prompt_default_yes
 
     def run(self) -> bool:
         raise NotImplementedError
@@ -245,35 +248,72 @@ class DaemonStep(SetupStep):
 
 class EnrichStep(SetupStep):
     name = "enrich"
-    description = "Let your agent contribute doc/code knowledge to the graph (costs agent tokens)"
-    prompt_default_yes = False
+    description = "Agent reads docs/configs and fills graph gaps (recommended; costs agent tokens)"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._worthwhile = False
+
+    def prompt_default(self, done: bool) -> bool:
+        return (not done) and self._worthwhile
 
     def status(self) -> tuple[bool, str]:
         from cirdan.engine import CirdanEngine
+        from cirdan.enrich import enrichment_targets, summarize_targets
         from cirdan.graph.contrib import agent_contributions
 
+        self._worthwhile = False
         engine = CirdanEngine(self._config())
         contributions = agent_contributions(engine)
         total = len(contributions["nodes"]) + len(contributions["edges"])
         if total:
             return True, f"{total} agent contributions in the graph"
-        return False, "no agent contributions yet"
+        if not engine.store.all_nodes():
+            return False, "graph is empty — run the map step first"
+        targets = enrichment_targets(engine)
+        summary = summarize_targets(targets)
+        if summary == "0 targets":
+            return True, "nothing to enrich — scanners left no gaps"
+        from cirdan.agents.installer import detect_enrich_command
+
+        detected = detect_enrich_command()
+        if detected is None:
+            return False, f"no agent contributions yet — {summary}, but no agent CLI found (cirdan enrich --command …)"
+        self._worthwhile = True
+        return False, f"no agent contributions yet — {summary} (agent: {detected[0]})"
 
     def run(self) -> bool:
         import asyncio
 
         from cirdan.engine import CirdanEngine
-        from cirdan.enrich import build_enrichment_brief, resolve_enrich_command, run_enrichment
+        from cirdan.enrich import (
+            build_enrichment_brief, enrichment_targets, resolve_enrich_command,
+            run_enrichment, summarize_targets,
+        )
 
         engine = CirdanEngine(self._config())
+        summary = summarize_targets(enrichment_targets(engine))
+        if summary == "0 targets":
+            self.console.print("  nothing to enrich — scanners left no gaps")
+            return True
         template = resolve_enrich_command(engine, None)
         if template is None:
             self.console.print("  [yellow]no known agent CLI found[/yellow] — run `cirdan enrich --command …` manually")
             return False
         brief = build_enrichment_brief(engine)
+        agent = template.split()[0]
+        self.console.print(f"  running [bold]{agent}[/bold] against the brief — {summary}, up to 15 min")
         self.console.print(f"  brief: {brief}")
         ok, diff = asyncio.run(run_enrichment(engine, template, brief))
-        self.console.print(f"  contributed {len(diff['nodes'])} nodes, {len(diff['edges'])} edges")
+        if not diff["nodes"] and not diff["edges"]:
+            note = "agent finished but contributed nothing" if ok else "agent failed before contributing"
+            self.console.print(f"  {note} — brief and output are in the audit log")
+            return ok
+        self.console.print(f"  contributed {len(diff['nodes'])} nodes, {len(diff['edges'])} edges:")
+        for node in diff["nodes"][:5]:
+            self.console.print(f"    + {node.id}")
+        for edge in diff["edges"][:5]:
+            self.console.print(f"    + {edge.source} —{edge.relation.value}→ {edge.target}")
         return ok
 
 
@@ -317,7 +357,7 @@ def run_guided(root: Path, console: Console, status_console: Console,
         if step.name in only:
             decision = only[step.name]
         elif interactive:
-            decision = typer.confirm("  run this step?", default=(not done) and step.prompt_default_yes)
+            decision = typer.confirm("  run this step?", default=step.prompt_default(done))
         else:
             decision = False
         if decision:

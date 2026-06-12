@@ -213,6 +213,124 @@ def test_mcp_step_system_run_registers(tmp_path, monkeypatch):
     assert cursor["mcpServers"]["cirdan"]["args"] == ["serve-mcp", "--system"]
 
 
+# -- enrich step ---------------------------------------------------------------
+
+
+EMPTY_TARGETS = {"docs": [], "isolated": [], "uncertain": [],
+                 "unlinked_iac": [], "pipelines_without_deploys": []}
+
+
+@pytest.fixture
+def enrich_project(tmp_path, monkeypatch):
+    """A mapped copy of the k8s-aws fixture (its graph has enrichment targets)."""
+    from cirdan.config import CirdanConfig
+    from cirdan.engine import CirdanEngine
+    from tests.conftest import make_access
+
+    root = tmp_path / "proj"
+    shutil.copytree(FIXTURES / "repos" / "k8s-aws-app", root)
+    monkeypatch.setenv("PATH", f"{FIXTURES / 'fake-bin'}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("CIRDAN_NO_UPDATE_CHECK", "1")
+    eng = CirdanEngine(CirdanConfig(root=str(root)))
+    eng._access = make_access()
+    eng.store.kv_set("access_context", eng._access.model_dump_json())
+    eng.builder().run_static()
+    return root
+
+
+def test_enrich_status_shows_targets_and_agent(enrich_project, monkeypatch):
+    from cirdan.cli.setup_flow import EnrichStep
+
+    monkeypatch.setattr(shutil, "which",
+                        lambda name, *a, **k: "/usr/bin/claude" if name == "claude" else None)
+    step = EnrichStep(enrich_project, quiet, quiet)
+    done, msg = step.status()
+    assert done is False
+    assert "targets" in msg and "agent: claude" in msg
+    assert step.prompt_default(done) is True
+
+
+def test_enrich_status_without_agent_cli(enrich_project, monkeypatch):
+    from cirdan.cli.setup_flow import EnrichStep
+
+    monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
+    step = EnrichStep(enrich_project, quiet, quiet)
+    done, msg = step.status()
+    assert done is False
+    assert "no agent CLI found" in msg
+    assert step.prompt_default(done) is False
+
+
+def test_enrich_status_empty_graph(project):
+    from cirdan.cli.setup_flow import EnrichStep
+
+    step = EnrichStep(project, quiet, quiet)
+    done, msg = step.status()
+    assert done is False
+    assert "run the map step first" in msg
+    assert step.prompt_default(done) is False
+
+
+def test_enrich_noop_when_no_targets(enrich_project, monkeypatch):
+    import cirdan.enrich as enrich_mod
+    from cirdan.cli.setup_flow import EnrichStep
+
+    monkeypatch.setattr(enrich_mod, "enrichment_targets", lambda engine: EMPTY_TARGETS)
+    step = EnrichStep(enrich_project, quiet, quiet)
+    done, msg = step.status()
+    assert done is True
+    assert "nothing to enrich" in msg
+    assert step.run() is True  # cheap no-op, keeps --all green
+
+
+def test_enrich_step_run_with_fake_agent(enrich_project, tmp_path, monkeypatch):
+    import stat
+
+    import cirdan.enrich as enrich_mod
+    from cirdan.cli.setup_flow import EnrichStep
+
+    repo_venv_cirdan = Path(__file__).parent.parent / ".venv" / "bin" / "cirdan"
+    cirdan_bin = str(repo_venv_cirdan) if repo_venv_cirdan.is_file() else shutil.which("cirdan")
+    script = tmp_path / "fake-agent.sh"
+    script.write_text(
+        f"#!/bin/sh\n{cirdan_bin} graph add-edge checkout-api payments_jobs WRITES_TO "
+        f"--evidence 'fake-agent: checkout publishes payment jobs' "
+        f"--agent fake --path {enrich_project}\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setattr(enrich_mod, "resolve_enrich_command",
+                        lambda engine, override: f"{script} {{brief_file}}")
+
+    step = EnrichStep(enrich_project, quiet, quiet)
+    assert step.run() is True
+    done, msg = step.status()
+    assert done is True
+    assert "agent contributions" in msg
+    assert step.prompt_default(done) is False
+
+
+def test_setup_all_includes_enrich(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    import cirdan.cli.setup_flow as flow
+    from cirdan.cli import main as cli_main
+
+    captured = {}
+
+    def fake_run_guided(root, console, status_console, interactive=None, only=None, **kwargs):
+        captured["only"] = only
+        return {}
+
+    monkeypatch.setattr(flow, "run_guided", fake_run_guided)
+    result = CliRunner().invoke(cli_main.app, ["setup", str(tmp_path), "--all"])
+    assert result.exit_code == 0, result.output
+    assert captured["only"]["enrich"] is True
+
+    result = CliRunner().invoke(cli_main.app, ["setup", str(tmp_path), "--all", "--no-enrich"])
+    assert result.exit_code == 0, result.output
+    assert captured["only"]["enrich"] is False
+
+
 def test_setup_summary_appends_system_flag(tmp_path, monkeypatch):
     from cirdan.cli import main as cli_main
 

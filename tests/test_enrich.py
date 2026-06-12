@@ -39,6 +39,16 @@ def test_targets_find_unlinked_iac_and_uncertain(engine):
     assert "postgres-prod" in uncertain_names
 
 
+def test_summarize_targets_omits_zero_categories():
+    from cirdan.enrich import summarize_targets
+
+    targets = {"docs": [], "isolated": ["a", "b"], "unlinked_iac": [],
+               "pipelines_without_deploys": [], "uncertain": ["c"]}
+    assert summarize_targets(targets) == "3 targets: 2 isolated, 1 uncertain"
+    empty = {k: [] for k in targets}
+    assert summarize_targets(empty) == "0 targets"
+
+
 def test_brief_contents(engine):
     brief = Path(build_enrichment_brief(engine))
     text = brief.read_text()
@@ -96,6 +106,7 @@ def test_dry_run_spawns_nothing(engine, monkeypatch):
         "--dry-run", "--command", "definitely-not-a-real-binary {brief_file}",
     ])
     assert result.exit_code == 0, result.output
+    assert "Targets:" in result.output
     assert "Would run" in result.output
     assert "definitely-not-a-real-binary" in result.output
 

@@ -451,9 +451,13 @@ def enrich(
     the deterministic scanners missed (docs, implied dependencies, IaC links)."""
     import asyncio
 
-    from cirdan.enrich import build_enrichment_brief, resolve_enrich_command, run_enrichment
+    from cirdan.enrich import (
+        build_enrichment_brief, enrichment_targets, resolve_enrich_command,
+        run_enrichment, summarize_targets,
+    )
 
     engine = _open_engine(path, system=system)
+    console.print(f"Targets: [bold]{summarize_targets(enrichment_targets(engine))}[/bold]")
     brief_file = build_enrichment_brief(engine)
     console.print(f"Brief: [bold]{brief_file}[/bold]")
     template = resolve_enrich_command(engine, command)
@@ -782,7 +786,7 @@ def install(
 def setup(
     path: str = typer.Argument(".", help="Project root."),
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan) instead of a project."),
-    all_steps: bool = typer.Option(False, "--all", help="Run every step without prompting (except enrich)."),
+    all_steps: bool = typer.Option(False, "--all", help="Run every step without prompting."),
     enrich: bool = typer.Option(None, "--enrich/--no-enrich",
                                 help="Run the agent enrichment pass (costs agent tokens)."),
 ):
@@ -793,7 +797,7 @@ def setup(
     from cirdan.cli.setup_flow import run_guided
 
     root = Path(path).resolve()
-    only = {name: True for name in ("agents", "mcp", "responder", "map", "daemon")} if all_steps else {}
+    only = {name: True for name in ("agents", "mcp", "responder", "map", "daemon", "enrich")} if all_steps else {}
     if enrich is not None:
         only["enrich"] = enrich
     results = run_guided(root, console, status_console, only=only or None,

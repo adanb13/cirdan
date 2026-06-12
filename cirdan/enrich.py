@@ -84,6 +84,20 @@ def enrichment_targets(engine: CirdanEngine) -> dict:
     }
 
 
+def summarize_targets(targets: dict) -> str:
+    """One-line human summary, e.g. '9 targets: 5 isolated, 2 unlinked IaC, 2 uncertain'."""
+    parts = [
+        (len(targets["isolated"]), "isolated"),
+        (len(targets["unlinked_iac"]), "unlinked IaC"),
+        (len(targets["pipelines_without_deploys"]), "pipelines without deploys"),
+        (len(targets["uncertain"]), "uncertain"),
+    ]
+    total = sum(count for count, _ in parts)
+    if not total:
+        return "0 targets"
+    return f"{total} targets: " + ", ".join(f"{count} {label}" for count, label in parts if count)
+
+
 def _node_lines(nodes: list, limit: int = 20) -> list[str]:
     lines = [f"- `{n.id}` ({n.type}, {n.confidence.value})" for n in nodes[:limit]]
     if len(nodes) > limit:
