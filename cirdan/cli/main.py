@@ -32,6 +32,33 @@ def _daemon_main():
     """Cirdan always-on daemon."""
 
 
+def _first_run_hint(invoked_subcommand: str | None) -> None:
+    """One-time welcome on a machine's very first cirdan invocation.
+
+    The closest thing to a post-install message: pip/uv can't print one
+    (wheels install without executing project code), so we greet on first run.
+    """
+    import os
+    import sys
+    from pathlib import Path
+
+    try:
+        base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+        marker = Path(base) / "cirdan" / "first-run"
+        if marker.exists():
+            return
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("")
+        if sys.stderr.isatty() and invoked_subcommand not in ("setup", "install"):
+            status_console.print(
+                "[bold]Welcome to Cirdan.[/bold] Set it up in one go: "
+                "[bold]cirdan setup --system[/bold] [dim](watch this whole machine)[/dim] "
+                "or [bold]cirdan install --project[/bold] [dim](this repo)[/dim]"
+            )
+    except Exception:
+        pass
+
+
 def _nudge_if_outdated() -> None:
     """One dim stderr line when PyPI has a newer release; humans only, never pipelines."""
     import sys
@@ -56,6 +83,7 @@ def _main(
     ctx: typer.Context,
     version: bool = typer.Option(False, "--version", help="Show version and exit."),
 ):
+    _first_run_hint(ctx.invoked_subcommand)
     _nudge_if_outdated()
     if version:
         console.print(f"cirdan {cirdan_pkg.__version__}")

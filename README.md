@@ -30,6 +30,16 @@ pipx install "cirdanops[all]"
 pip install "cirdanops[all]"
 ```
 
+**Then set it up in one command:**
+
+```bash
+cirdan setup --system     # map + watch your whole machine, agent-ready
+# or, inside a repo:
+cirdan install --project
+```
+
+Both walk you through the full loop: hook your AI agents, arm the incident responder, build the first map, and start the always-on daemon.
+
 Targeted installs: `cirdanops[mcp]`, `cirdanops[api]`, `cirdanops[terraform]`, or combinations like `cirdanops[terraform,mcp]`. The Docker/Kubernetes/AWS/systemd adapters need no extras — they use the CLIs already on your PATH.
 
 **Prerequisites by platform** (Python 3.11+ and `uv` or `pipx`):
