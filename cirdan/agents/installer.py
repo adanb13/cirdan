@@ -104,7 +104,8 @@ def _write(path: Path, content: str) -> Path:
     return path
 
 
-def _merge_mcp_json(path: Path, key: str = "mcpServers", args: list[str] | None = None) -> Path:
+def _merge_mcp_json(path: Path, key: str = "mcpServers", args: list[str] | None = None,
+                    entry: dict | None = None) -> Path:
     data: dict = {}
     if path.is_file():
         try:
@@ -112,9 +113,45 @@ def _merge_mcp_json(path: Path, key: str = "mcpServers", args: list[str] | None 
         except json.JSONDecodeError:
             data = {}
     servers = data.setdefault(key, {})
-    servers["cirdan"] = {"command": "cirdan", "args": args or ["serve-mcp"]}
+    servers["cirdan"] = entry or {"command": "cirdan", "args": args or ["serve-mcp"]}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n")
+    return path
+
+
+def _merge_opencode_json(path: Path, system: bool = False) -> Path:
+    """opencode reads `mcp` from opencode.json; its command is an array."""
+    data: dict = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text()) or {}
+        except json.JSONDecodeError:
+            data = {}
+    data.setdefault("$schema", "https://opencode.ai/config.json")
+    command = ["cirdan", "serve-mcp", *(["--system"] if system else [])]
+    data.setdefault("mcp", {})["cirdan"] = {"type": "local", "command": command, "enabled": True}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    return path
+
+
+def _merge_goose_yaml(path: Path, system: bool = False) -> Path:
+    """Goose models MCP servers as stdio `extensions` in its YAML config."""
+    import yaml
+
+    data: dict = {}
+    if path.is_file():
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except yaml.YAMLError:
+            data = {}
+    args = ["serve-mcp", *(["--system"] if system else [])]
+    data.setdefault("extensions", {})["cirdan"] = {
+        "enabled": True, "type": "stdio", "name": "cirdan",
+        "cmd": "cirdan", "args": args, "timeout": 300,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
     return path
 
 
@@ -159,11 +196,66 @@ def install_generic(base: Path, project: bool) -> list[Path]:
     ]
 
 
+# Project-scope MCP entry for clients that accept a stdio command + args inline.
+_STDIO_ENTRY = {"type": "stdio", "command": "cirdan", "args": ["serve-mcp"]}
+
+
+def install_vscode(base: Path, project: bool) -> list[Path]:
+    """VS Code + GitHub Copilot: repo-wide custom instructions + native MCP config."""
+    written = [_upsert_block(base / ".github" / "copilot-instructions.md", instructions(project))]
+    if project:
+        # VS Code's .vscode/mcp.json uses the `servers` key (not `mcpServers`).
+        written.append(_merge_mcp_json(base / ".vscode" / "mcp.json", key="servers", entry=dict(_STDIO_ENTRY)))
+    return written
+
+
+def install_windsurf(base: Path, project: bool) -> list[Path]:
+    """Windsurf reads rules from .windsurf/rules/. Its MCP config is global only
+    (~/.codeium/windsurf/mcp_config.json) — registered via register_user_mcp."""
+    rule = "---\ntrigger: always_on\n---\n\n" + instructions(project)
+    return [_write(base / ".windsurf" / "rules" / "cirdan.md", rule)]
+
+
+def install_roo(base: Path, project: bool) -> list[Path]:
+    """Roo Code: project rules + project-scope MCP at .roo/mcp.json."""
+    written = [_write(base / ".roo" / "rules" / "cirdan.md", instructions(project))]
+    if project:
+        written.append(_merge_mcp_json(base / ".roo" / "mcp.json", key="mcpServers", entry=dict(_STDIO_ENTRY)))
+    return written
+
+
+def install_cline(base: Path, project: bool) -> list[Path]:
+    """Cline reads .clinerules/ (and AGENTS.md). Its MCP settings live in the
+    editor's globalStorage (path varies by OS/editor), so MCP registration is a
+    documented manual step rather than something we can write reliably."""
+    return [_write(base / ".clinerules" / "cirdan.md", instructions(project))]
+
+
+def install_opencode(base: Path, project: bool) -> list[Path]:
+    """opencode reads AGENTS.md; project MCP goes in opencode.json under `mcp`."""
+    written = [_upsert_block(base / "AGENTS.md", instructions(project))]
+    if project:
+        written.append(_merge_opencode_json(base / "opencode.json"))
+    return written
+
+
+def install_goose(base: Path, project: bool) -> list[Path]:
+    """Goose reads .goosehints for guidance; MCP `extensions` are global
+    (~/.config/goose/config.yaml) — registered via register_user_mcp."""
+    return [_write(base / ".goosehints", instructions(project))]
+
+
 PLATFORMS = {
     "claude": install_claude,
     "codex": install_codex,
     "cursor": install_cursor,
     "gemini": install_gemini,
+    "vscode": install_vscode,
+    "windsurf": install_windsurf,
+    "roo": install_roo,
+    "cline": install_cline,
+    "opencode": install_opencode,
+    "goose": install_goose,
     "generic": install_generic,
 }
 
@@ -176,13 +268,19 @@ _PLATFORM_MARKERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "codex": (("codex",), (".codex",)),
     "cursor": (("cursor-agent", "cursor"), (".cursor",)),
     "gemini": (("gemini",), (".gemini",)),
+    "vscode": (("code", "code-insiders"), ()),
+    "windsurf": (("windsurf",), (".codeium",)),
+    "opencode": (("opencode",), (".config/opencode",)),
+    "goose": (("goose",), (".config/goose",)),
+    # roo and cline are VS Code extensions with no CLI/home marker — they have
+    # no entry here (not auto-detected), but remain available via --platform.
 }
 
 
 # User-scope MCP registration: make `cirdan serve-mcp --system` available in
 # every project. CLI-owned configs (claude, codex) go through the platform's
 # own CLI; JSON configs (gemini, cursor) are merged directly.
-MCP_USER_PLATFORMS = ("claude", "codex", "cursor", "gemini")
+MCP_USER_PLATFORMS = ("claude", "codex", "cursor", "gemini", "vscode", "windsurf", "opencode", "goose")
 
 _SYSTEM_MCP_ARGS = ("serve-mcp", "--system")
 
@@ -205,6 +303,46 @@ def _toml_has_cirdan(path: Path) -> bool:
     return "cirdan" in (data.get("mcp_servers") or {})
 
 
+def _opencode_has_cirdan(path: Path) -> bool:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(data, dict) and "cirdan" in (data.get("mcp") or {})
+
+
+def _goose_has_cirdan(path: Path) -> bool:
+    import yaml
+
+    try:
+        data = yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError):
+        return False
+    return isinstance(data, dict) and "cirdan" in (data.get("extensions") or {})
+
+
+def _vscode_has_cirdan() -> bool:
+    """VS Code stores user MCP under `mcp.servers` in settings.json, whose path
+    is OS/edition specific — scan the common locations."""
+    home = Path.home()
+    candidates = [
+        home / ".config" / "Code" / "User" / "settings.json",
+        home / ".config" / "Code - Insiders" / "User" / "settings.json",
+        home / "Library" / "Application Support" / "Code" / "User" / "settings.json",
+        home / "Library" / "Application Support" / "Code - Insiders" / "User" / "settings.json",
+        home / "AppData" / "Roaming" / "Code" / "User" / "settings.json",
+        home / "AppData" / "Roaming" / "Code - Insiders" / "User" / "settings.json",
+    ]
+    for path in candidates:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict) and "cirdan" in ((data.get("mcp") or {}).get("servers") or {}):
+            return True
+    return False
+
+
 def user_mcp_registered(platform: str) -> bool:
     home = Path.home()
     if platform == "claude":
@@ -215,6 +353,14 @@ def user_mcp_registered(platform: str) -> bool:
         return _json_has_cirdan(home / ".gemini" / "settings.json")
     if platform == "cursor":
         return _json_has_cirdan(home / ".cursor" / "mcp.json")
+    if platform == "windsurf":
+        return _json_has_cirdan(home / ".codeium" / "windsurf" / "mcp_config.json")
+    if platform == "opencode":
+        return _opencode_has_cirdan(home / ".config" / "opencode" / "opencode.json")
+    if platform == "goose":
+        return _goose_has_cirdan(home / ".config" / "goose" / "config.yaml")
+    if platform == "vscode":
+        return _vscode_has_cirdan()
     return False
 
 
@@ -254,6 +400,28 @@ def register_user_mcp(platforms: list[str]) -> dict[str, tuple[bool, str]]:
         elif platform == "cursor":
             path = _merge_mcp_json(home / ".cursor" / "mcp.json", args=list(_SYSTEM_MCP_ARGS))
             results[platform] = (True, f"registered in {path}")
+        elif platform == "windsurf":
+            path = _merge_mcp_json(home / ".codeium" / "windsurf" / "mcp_config.json",
+                                   args=list(_SYSTEM_MCP_ARGS))
+            results[platform] = (True, f"registered in {path}")
+        elif platform == "opencode":
+            path = _merge_opencode_json(home / ".config" / "opencode" / "opencode.json", system=True)
+            results[platform] = (True, f"registered in {path}")
+        elif platform == "goose":
+            path = _merge_goose_yaml(home / ".config" / "goose" / "config.yaml", system=True)
+            results[platform] = (True, f"registered in {path}")
+        elif platform == "vscode":
+            code_bin = next((b for b in ("code", "code-insiders") if shutil.which(b)), None)
+            if not code_bin:
+                results[platform] = (True, "VS Code CLI (code) not on PATH — skipped")
+                continue
+            spec = json.dumps({"name": "cirdan", "command": "cirdan", "args": list(_SYSTEM_MCP_ARGS)})
+            result = run_cmd([code_bin, "--add-mcp", spec], timeout=60)
+            if result.ok:
+                results[platform] = (True, f"registered via `{code_bin} --add-mcp`")
+            else:
+                detail = (result.stderr or result.stdout).strip()[:300] or "failed"
+                results[platform] = (False, f"`{code_bin} --add-mcp` failed: {detail}")
     return results
 
 

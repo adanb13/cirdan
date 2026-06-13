@@ -1,0 +1,47 @@
+{
+  "name": "@cirdanops/cli",
+  "version": "0.0.0-managed",
+  "description": "Cirdan — AI infrastructure cartographer & MCP server. Zero-Python standalone binary, runnable via npx.",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "infrastructure",
+    "ai",
+    "agents",
+    "devops",
+    "sre",
+    "observability",
+    "knowledge-graph",
+    "cirdan"
+  ],
+  "bin": {
+    "cirdan": "bin/cirdan.js"
+  },
+  "files": [
+    "bin/",
+    "install-check.js",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node install-check.js || true"
+  },
+  "optionalDependencies": {
+    "@cirdanops/cli-darwin-arm64": "0.0.0-managed",
+    "@cirdanops/cli-darwin-x64": "0.0.0-managed",
+    "@cirdanops/cli-linux-x64": "0.0.0-managed",
+    "@cirdanops/cli-linux-arm64": "0.0.0-managed",
+    "@cirdanops/cli-win32-x64": "0.0.0-managed"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adanb13/cirdan.git"
+  },
+  "homepage": "https://github.com/adanb13/cirdan#readme",
+  "bugs": {
+    "url": "https://github.com/adanb13/cirdan/issues"
+  }
+}

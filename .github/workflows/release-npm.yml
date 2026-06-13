@@ -1,0 +1,129 @@
+name: release-npm
+
+# Builds the zero-Python standalone `cirdan` binary per platform with
+# PyInstaller, packs each into its @cirdanops/cli-<platform> npm package, and
+# publishes them plus the @cirdanops/cli meta package on release. Independent of
+# the PyPI/Docker jobs in release.yml; reuses the same trigger.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  version-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert pyproject == __init__ == tag
+        run: |
+          PYPROJECT=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          INIT=$(python3 -c "import re;print(re.search(r'__version__ = \"([^\"]+)\"', open('cirdan/__init__.py').read()).group(1))")
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "pyproject=$PYPROJECT  __init__=$INIT  tag=$TAG"
+          if [ "$PYPROJECT" != "$INIT" ] || [ "$INIT" != "$TAG" ]; then
+            echo "::error::version mismatch — pyproject/__init__/tag must all agree before an npm release"
+            exit 1
+          fi
+
+  build-binaries:
+    needs: version-guard
+    name: build ${{ matrix.target }}
+    permissions:
+      contents: write # upload the binary as a release asset (for Homebrew + curl installer)
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { target: darwin-arm64, runner: macos-14, ext: "" }
+          - { target: darwin-x64, runner: macos-13, ext: "" }
+          - { target: linux-x64, runner: ubuntu-22.04, ext: "" }
+          - { target: linux-arm64, runner: ubuntu-22.04-arm, ext: "" }
+          - { target: win32-x64, runner: windows-2022, ext: ".exe" }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Cirdan + PyInstaller
+        run: python -m pip install -e ".[all]" pyinstaller
+      - name: Build standalone binary
+        run: pyinstaller cirdan.spec
+      - name: Stage binary into platform package
+        shell: bash
+        run: |
+          mkdir -p "npm/platforms/${{ matrix.target }}/bin"
+          cp "dist/cirdan${{ matrix.ext }}" "npm/platforms/${{ matrix.target }}/bin/cirdan${{ matrix.ext }}"
+          chmod +x "npm/platforms/${{ matrix.target }}/bin/cirdan${{ matrix.ext }}" || true
+      - name: Smoke test — version (lazy cirdan imports load)
+        shell: bash
+        run: |
+          "dist/cirdan${{ matrix.ext }}" --version
+      - name: Smoke test — serve-mcp stdio handshake (mcp extra bundled)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          BIN="dist/cirdan${{ matrix.ext }}"
+          REQ='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          OUT="$(printf '%s\n' "$REQ" | timeout 30 "$BIN" serve-mcp 2>/dev/null | head -c 8000 || true)"
+          echo "$OUT"
+          echo "$OUT" | grep -qiE '"(result|serverInfo|protocolVersion)"' || { echo "::error::no MCP handshake response"; exit 1; }
+      - name: Upload binary as a release asset (Homebrew + curl installer source)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET="cirdan-${{ matrix.target }}${{ matrix.ext }}"
+          cp "dist/cirdan${{ matrix.ext }}" "$ASSET"
+          gh release upload "${GITHUB_REF_NAME}" "$ASSET" --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npmpkg-${{ matrix.target }}
+          path: npm/platforms/${{ matrix.target }}/
+
+  publish-npm:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm provenance / OIDC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: npmpkg-*
+          path: npm/_built
+      - name: Re-stage built binaries
+        run: |
+          for d in npm/_built/npmpkg-*/; do
+            t="$(basename "$d" | sed 's/^npmpkg-//')"
+            mkdir -p "npm/platforms/$t"
+            cp -r "$d"/. "npm/platforms/$t/"
+          done
+      - name: Sync versions from the release tag
+        env:
+          VERSION_REF: ${{ github.ref_name }}
+        run: |
+          VERSION="${VERSION_REF#v}"
+          echo "publishing npm version $VERSION"
+          npm --prefix npm/cli version "$VERSION" --no-git-tag-version --allow-same-version
+          for d in npm/platforms/*/; do
+            [ -f "$d/package.json" ] && npm --prefix "$d" version "$VERSION" --no-git-tag-version --allow-same-version
+          done
+          VERSION="$VERSION" node -e "const fs=require('fs');const p='npm/cli/package.json';const j=JSON.parse(fs.readFileSync(p));for(const k of Object.keys(j.optionalDependencies)){j.optionalDependencies[k]=process.env.VERSION;}fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
+      - name: Publish platform packages first
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for d in npm/platforms/*/; do
+            [ -f "$d/package.json" ] && [ -d "$d/bin" ] && npm publish "$d" --access public --provenance
+          done
+      - name: Publish meta package last
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish npm/cli --access public --provenance
