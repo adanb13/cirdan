@@ -1,37 +1,34 @@
-# Homebrew formula for Cirdan's zero-Python standalone binary.
+# Homebrew formula TEMPLATE for Cirdan's zero-Python standalone binary.
 #
-# This lives in a tap repo (e.g. github.com/adanb13/homebrew-tap as Formula/
-# cirdan.rb) so users can:  brew install adanb13/tap/cirdan
+# This is the source of truth for the formula published to the tap repo
+# (github.com/adanb13/homebrew-tap as Formula/cirdan.rb), enabling:
+#   brew install adanb13/tap/cirdan
 #
-# The url/sha256 per platform point at the release assets uploaded by
-# .github/workflows/release-npm.yml (cirdan-<target>). On each release, bump
-# `version`, the URLs, and fill the sha256 values (e.g. `shasum -a 256 cirdan-*`).
-# A tap update can be automated from the release workflow.
+# The `update-homebrew` job in .github/workflows/release-npm.yml fills the
+# version + per-platform sha256 placeholders from the release assets and pushes
+# the result to the tap on every release. The placeholder values below are
+# sentinels the job rewrites — do not treat them as real.
 class Cirdan < Formula
   desc "AI infrastructure cartographer and MCP server"
   homepage "https://github.com/adanb13/cirdan"
-  version "0.7.0"
+  version "0.0.0"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-darwin-arm64"
-      sha256 "REPLACE_WITH_DARWIN_ARM64_SHA256"
-    end
-    on_intel do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-darwin-x64"
-      sha256 "REPLACE_WITH_DARWIN_X64_SHA256"
+      url "https://github.com/adanb13/cirdan/releases/download/v0.0.0/cirdan-darwin-arm64"
+      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-linux-arm64"
-      sha256 "REPLACE_WITH_LINUX_ARM64_SHA256"
+      url "https://github.com/adanb13/cirdan/releases/download/v0.0.0/cirdan-linux-arm64"
+      sha256 "1111111111111111111111111111111111111111111111111111111111111111"
     end
     on_intel do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-linux-x64"
-      sha256 "REPLACE_WITH_LINUX_X64_SHA256"
+      url "https://github.com/adanb13/cirdan/releases/download/v0.0.0/cirdan-linux-x64"
+      sha256 "2222222222222222222222222222222222222222222222222222222222222222"
     end
   end
 
