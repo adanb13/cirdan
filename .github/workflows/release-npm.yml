@@ -158,5 +158,5 @@ jobs:
           if npm view "$name@$ver" version >/dev/null 2>&1; then
             echo "$name@$ver already published — skipping"
           else
-            npm publish npm/cli --access public --provenance
+            npm publish ./npm/cli --access public --provenance
           fi
