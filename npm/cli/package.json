@@ -1,5 +1,6 @@
 {
   "name": "@cirdanops/cli",
+  "mcpName": "io.github.adanb13/cirdan",
   "version": "0.0.0-managed",
   "description": "Cirdan — AI infrastructure cartographer & MCP server. Zero-Python standalone binary, runnable via npx.",
   "keywords": [
