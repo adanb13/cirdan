@@ -6,6 +6,9 @@ cirdan-out/
 dist/
 build/
 
+# npm: per-platform binaries are produced in CI and staged here, never committed.
+npm/platforms/*/bin/
+node_modules/
 # Files `cirdan install --project` generates when run inside the demo —
 # machine-specific, never to be committed.
 examples/demo/CLAUDE.md

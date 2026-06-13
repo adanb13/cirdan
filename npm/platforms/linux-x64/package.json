@@ -1,0 +1,13 @@
+{
+  "name": "@cirdanops/cli-linux-x64",
+  "version": "0.0.0-managed",
+  "description": "Cirdan standalone binary for Linux x64 (glibc).",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "files": ["bin/"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adanb13/cirdan.git"
+  }
+}
