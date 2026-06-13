@@ -160,3 +160,30 @@ jobs:
           else
             npm publish ./npm/cli --access public --provenance
           fi
+
+  publish-registry:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC auth to the MCP registry (io.github.adanb13 namespace)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for npm + PyPI packages to be live
+        run: |
+          VERSION=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "waiting for cirdanops==$VERSION on PyPI and @cirdanops/cli@$VERSION on npm"
+          for i in $(seq 1 30); do
+            curl -sfo /dev/null "https://pypi.org/pypi/cirdanops/$VERSION/json" && break || sleep 10
+          done
+          for i in $(seq 1 30); do
+            curl -sfo /dev/null "https://registry.npmjs.org/@cirdanops%2fcli/$VERSION" && break || sleep 10
+          done
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_linux_amd64.tar.gz" \
+            | tar -xz mcp-publisher
+      - name: Publish to the MCP registry (OIDC)
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
