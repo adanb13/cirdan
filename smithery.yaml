@@ -1,0 +1,19 @@
+# Smithery listing for the Cirdan MCP server (https://smithery.ai).
+# Runs the published npm package over stdio — no Python or local install needed.
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      system:
+        type: boolean
+        default: false
+        description: "Use the machine-level scope (~/.cirdan) instead of the current project."
+    required: []
+  commandFunction: |-
+    (config) => ({
+      command: "npx",
+      args: ["-y", "@cirdanops/cli", "serve-mcp"].concat(config && config.system ? ["--system"] : [])
+    })
+  exampleConfig:
+    system: false

@@ -28,6 +28,8 @@ jobs:
   build-binaries:
     needs: version-guard
     name: build ${{ matrix.target }}
+    permissions:
+      contents: write # upload the binary as a release asset (for Homebrew + curl installer)
     strategy:
       fail-fast: true
       matrix:
@@ -66,6 +68,14 @@ jobs:
           OUT="$(printf '%s\n' "$REQ" | timeout 30 "$BIN" serve-mcp 2>/dev/null | head -c 8000 || true)"
           echo "$OUT"
           echo "$OUT" | grep -qiE '"(result|serverInfo|protocolVersion)"' || { echo "::error::no MCP handshake response"; exit 1; }
+      - name: Upload binary as a release asset (Homebrew + curl installer source)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET="cirdan-${{ matrix.target }}${{ matrix.ext }}"
+          cp "dist/cirdan${{ matrix.ext }}" "$ASSET"
+          gh release upload "${GITHUB_REF_NAME}" "$ASSET" --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: npmpkg-${{ matrix.target }}

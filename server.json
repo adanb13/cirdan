@@ -1,0 +1,48 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.adanb13/cirdan",
+  "description": "AI infrastructure cartographer & operations MCP server. Fingerprints, graphs, and watches the live infrastructure an agent can reach (Docker, Kubernetes, cloud, IaC, telemetry) and exposes it over MCP.",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/adanb13/cirdan",
+    "source": "github"
+  },
+  "version": "0.7.0",
+  "websiteUrl": "https://github.com/adanb13/cirdan",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@cirdanops/cli",
+      "version": "0.7.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve-mcp",
+          "valueHint": "subcommand"
+        }
+      ]
+    },
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "cirdanops",
+      "version": "0.7.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve-mcp",
+          "valueHint": "subcommand"
+        }
+      ]
+    }
+  ]
+}
