@@ -747,7 +747,8 @@ def _setup_summary(root, results: dict, system: bool = False) -> None:
 @app.command()
 def install(
     platform: str = typer.Option(None, "--platform",
-                                 help="claude, codex, cursor, gemini, or generic (default: auto-detect)."),
+                                 help="claude, codex, cursor, gemini, vscode, windsurf, roo, "
+                                      "cline, opencode, goose, or generic (default: auto-detect)."),
     all_platforms: bool = typer.Option(False, "--all-platforms", help="Install for every platform."),
     project: bool = typer.Option(False, "--project", help="Install into the current repo instead of the home directory."),
     path: str = typer.Option(".", "--path", help="Project root (with --project)."),
