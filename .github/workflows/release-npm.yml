@@ -115,6 +115,8 @@ jobs:
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
+      - name: Upgrade npm for OIDC trusted publishing (>= 11.5.1)
+        run: npm install -g npm@latest
       - uses: actions/download-artifact@v4
         with:
           pattern: npmpkg-*
@@ -136,8 +138,6 @@ jobs:
           done
           VERSION="$VERSION" node -e "const fs=require('fs');const p='npm/cli/package.json';const j=JSON.parse(fs.readFileSync(p));for(const k of Object.keys(j.optionalDependencies)){j.optionalDependencies[k]=process.env.VERSION;}fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
       - name: Publish platform packages first
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for d in npm/platforms/*/; do
             [ -f "$d/package.json" ] && [ -d "$d/bin" ] || continue
@@ -150,8 +150,6 @@ jobs:
             fi
           done
       - name: Publish meta package last
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           name=$(node -p "require('./npm/cli/package.json').name")
           ver=$(node -p "require('./npm/cli/package.json').version")
