@@ -28,6 +28,12 @@ case "$arch" in
   *) echo "cirdan: unsupported arch '$arch' — install via Python: pip install cirdanops" >&2; exit 1 ;;
 esac
 
+# Intel Macs aren't prebuilt (GitHub's Intel-Mac runners are scarce); use Python.
+if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
+  echo "cirdan: Intel Macs aren't prebuilt — install via Python: pip install cirdanops" >&2
+  exit 1
+fi
+
 # The prebuilt Linux binary is glibc-only; Alpine/musl must use the Python build.
 if [ "$os" = "linux" ] && [ -f /etc/alpine-release ]; then
   echo "cirdan: Alpine/musl detected — the prebuilt binary is glibc-only." >&2

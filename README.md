@@ -40,7 +40,7 @@ curl -LsSf https://raw.githubusercontent.com/adanb13/cirdan/main/packaging/insta
 # Windows: irm https://raw.githubusercontent.com/adanb13/cirdan/main/packaging/install.ps1 | iex
 ```
 
-These ship a self-contained binary — no Python 3.11+ required. Supported: macOS (arm64/x64), Linux x64/arm64 (glibc), Windows x64. On Alpine/musl or other platforms, use the PyPI install above.
+These ship a self-contained binary — no Python 3.11+ required. Supported: macOS (arm64), Linux x64/arm64 (glibc), Windows x64. On Intel Macs, Alpine/musl, or other platforms, use the PyPI install above.
 
 **Then set it up in one command:**
 

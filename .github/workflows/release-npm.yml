@@ -42,7 +42,8 @@ jobs:
       matrix:
         include:
           - { target: darwin-arm64, runner: macos-14, ext: "" }
-          - { target: darwin-x64, runner: macos-13, ext: "" }
+          # darwin-x64 (Intel) dropped: GitHub macos-13 runners are scarce and
+          # block the matrix. Intel-Mac users fall back to `pip install cirdanops`.
           - { target: linux-x64, runner: ubuntu-22.04, ext: "" }
           - { target: linux-arm64, runner: ubuntu-22.04-arm, ext: "" }
           - { target: win32-x64, runner: windows-2022, ext: ".exe" }
