@@ -30,6 +30,18 @@ pipx install "cirdanops[all]"
 pip install "cirdanops[all]"
 ```
 
+**Without Python — npm / Homebrew / curl:**
+
+```bash
+npx -y @cirdanops/cli serve-mcp        # run the MCP server, zero install
+npm install -g @cirdanops/cli          # or put the `cirdan` command on your PATH
+brew install adanb13/tap/cirdan        # macOS / Linux (Homebrew)
+curl -LsSf https://raw.githubusercontent.com/adanb13/cirdan/main/packaging/install.sh | sh
+# Windows: irm https://raw.githubusercontent.com/adanb13/cirdan/main/packaging/install.ps1 | iex
+```
+
+These ship a self-contained binary — no Python 3.11+ required. Supported: macOS (arm64/x64), Linux x64/arm64 (glibc), Windows x64. On Alpine/musl or other platforms, use the PyPI install above.
+
 **Then set it up in one command:**
 
 ```bash
@@ -92,6 +104,9 @@ Nothing happens automatically — PyPI is pull-only, so an installed version kee
 | `uv tool install` | `uv tool upgrade cirdanops` |
 | `pipx install` | `pipx upgrade cirdanops` |
 | `pip install` | `pip install -U cirdanops` |
+| npm (`-g`) | `npm install -g @cirdanops/cli@latest` (or just `npx @cirdanops/cli@latest …`) |
+| Homebrew | `brew upgrade cirdan` |
+| curl installer | re-run the install script (it fetches the latest) |
 | Docker | `docker pull ghcr.io/adanb13/cirdan:latest` (then restart the container) |
 
 Two operational notes: existing `cirdan-out/` artifacts and the SQLite graph are compatible across releases so far (a schema-version key + migration will land before 1.0). And the CLI prints a single dim line on stderr when a newer release exists (checked at most once a day, interactive terminals only) — silence it with `CIRDAN_NO_UPDATE_CHECK=1`.
@@ -175,7 +190,7 @@ System scope lives in `~/.cirdan/` (graph, incidents, briefs, daemon, optional `
 
 Once `~/.cirdan/` exists, the flag is mostly optional: a command run outside any cirdan project (no `cirdan.yaml`, `cirdan-out/`, or registered `.mcp.json`) falls back to the system scope automatically — with a one-line stderr notice — instead of scattering `cirdan-out/` directories or failing in unwritable locations. Inside a project, project scope always wins.
 
-`cirdan setup --system` also hooks your agents at the user level (instruction files whose examples carry `--system`) and registers Cirdan as a **user-scope MCP server** for the agent CLIs that support it — Claude Code and Codex through their own `mcp add`, Cursor and Gemini through their global JSON config — so the MCP tools are available in every project without per-repo setup.
+`cirdan setup --system` also hooks your agents at the user level (instruction files whose examples carry `--system`) and registers Cirdan as a **user-scope MCP server** for the agent CLIs that support it — Claude Code and Codex through their own `mcp add`, VS Code through `code --add-mcp`, and Cursor, Gemini, Windsurf, opencode, and Goose through their global config — so the MCP tools are available in every project without per-repo setup.
 
 ## Agent integration
 
@@ -186,12 +201,18 @@ cirdan install --platform claude     # .claude/skills/cirdan/SKILL.md + CLAUDE.m
 cirdan install --platform codex      # AGENTS.md + .codex/cirdan.md
 cirdan install --platform cursor     # .cursor/rules/cirdan.mdc + .cursor/mcp.json
 cirdan install --platform gemini     # GEMINI.md
+cirdan install --platform vscode     # .github/copilot-instructions.md + .vscode/mcp.json
+cirdan install --platform windsurf   # .windsurf/rules/cirdan.md  (MCP: global config)
+cirdan install --platform roo        # .roo/rules/cirdan.md + .roo/mcp.json
+cirdan install --platform cline      # .clinerules/cirdan.md  (MCP: editor UI)
+cirdan install --platform opencode   # AGENTS.md + opencode.json
+cirdan install --platform goose      # .goosehints  (MCP: global config)
 cirdan install --platform generic    # .agents/skills/cirdan/SKILL.md + AGENTS.md
 ```
 
 `cirdan install --project` is a guided setup that leaves Cirdan in full use, not just documented:
 
-1. **detects the agents on your machine** (claude/codex/cursor/gemini config or CLIs) and writes instruction files for exactly those (plus generic `AGENTS.md`)
+1. **detects the agents on your machine** (claude/codex/cursor/gemini/vscode/windsurf/opencode/goose config or CLIs) and writes instruction files for exactly those (plus generic `AGENTS.md`)
 2. **registers the MCP server** in `.mcp.json`
 3. **arms the incident responder** so daemon alerts route to your agent
 4. **runs the first map** (graph + artifacts in `cirdan-out/`)
@@ -200,6 +221,17 @@ cirdan install --platform generic    # .agents/skills/cirdan/SKILL.md + AGENTS.m
 Steps 3–5 are prompted (default yes) or driven by flags for scripts: `--responder/--no-responder`, `--map/--no-map`, `--daemon/--no-daemon`, `--all-platforms`. Re-run any of it later with `cirdan setup`, which shows each step's current state and only proposes what's missing.
 
 Installs are idempotent and never touch content outside Cirdan's own marker block. MCP tools include `query_infra_graph`, `get_node`, `get_neighbors`, `shortest_path`, `get_recent_errors`, `get_logs`, `get_state`, `list_incidents`, `explain_incident`, `list_available_actions`, `execute_action`, `verify_action`, `generate_view`, and more.
+
+**Supported agents.** First-class auto-registration (native instruction file + MCP where the agent supports a writable config) covers Claude Code, Codex, Cursor, Gemini, VS Code (+ GitHub Copilot), Windsurf, Roo Code, Cline, opencode, and Goose. Any other agent works through the generic `AGENTS.md` + `.agents/skills/cirdan/SKILL.md`. Auto-detection finds claude/codex/cursor/gemini/vscode/windsurf/opencode/goose; pass `--platform roo` or `--platform cline` explicitly (they're VS Code extensions with no CLI to detect, and Cline keeps MCP config in editor storage, so add that one through its UI).
+
+For any MCP client not listed, register Cirdan by hand — no Python required:
+
+```jsonc
+// npx form — zero install
+{ "command": "npx", "args": ["-y", "@cirdanops/cli", "serve-mcp"] }
+// or, if `cirdan` is already on PATH (pip / npm -g / brew / curl install):
+{ "command": "cirdan", "args": ["serve-mcp"] }
+```
 
 ## The graph
 
