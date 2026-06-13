@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cirdanops"
-version = "0.8.1"
+version = "0.8.2"
 description = "AI infrastructure cartographer and operations daemon — Graphify for live infrastructure. Fingerprints, graphs, and watches Docker/Kubernetes/AWS/IaC for AI agents via CLI + MCP."
 readme = "README.md"
 license = { file = "LICENSE" }

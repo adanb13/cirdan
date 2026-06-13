@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.adanb13/cirdan -->
+
 # Cirdan
 
 [![PyPI](https://img.shields.io/pypi/v/cirdanops)](https://pypi.org/project/cirdanops/)
