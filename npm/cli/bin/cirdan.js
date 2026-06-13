@@ -32,7 +32,7 @@ const bin = resolveBinary();
 if (!bin) {
   process.stderr.write(
     `\ncirdan: no prebuilt binary for ${PLATFORM}.\n` +
-      `Supported: darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64 (glibc).\n` +
+      `Supported: darwin-arm64, linux-x64, linux-arm64, win32-x64 (glibc); Intel Macs use pip.\n` +
       `On Alpine/musl, FreeBSD, or other platforms, install via Python instead:\n` +
       `    pip install cirdanops        # or: pipx install cirdanops / uv tool install cirdanops\n` +
       `then run:  cirdan serve-mcp\n\n`

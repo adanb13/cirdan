@@ -28,7 +28,6 @@
   },
   "optionalDependencies": {
     "@cirdanops/cli-darwin-arm64": "0.0.0-managed",
-    "@cirdanops/cli-darwin-x64": "0.0.0-managed",
     "@cirdanops/cli-linux-x64": "0.0.0-managed",
     "@cirdanops/cli-linux-arm64": "0.0.0-managed",
     "@cirdanops/cli-win32-x64": "0.0.0-managed"
