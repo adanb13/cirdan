@@ -10,28 +10,25 @@
 class Cirdan < Formula
   desc "AI infrastructure cartographer and MCP server"
   homepage "https://github.com/adanb13/cirdan"
-  version "0.7.0"
+  version "0.8.1"
   license "Apache-2.0"
 
   on_macos do
     on_arm do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-darwin-arm64"
-      sha256 "REPLACE_WITH_DARWIN_ARM64_SHA256"
+      url "https://github.com/adanb13/cirdan/releases/download/v0.8.1/cirdan-darwin-arm64"
+      sha256 "e26cabac4a090ea35fe6d3c2fdd9ffde9074fd8bdeb552515977fdf8c1cae5f1"
     end
-    on_intel do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-darwin-x64"
-      sha256 "REPLACE_WITH_DARWIN_X64_SHA256"
-    end
+    # Intel macOS (darwin-x64) is no longer built — Apple Silicon only.
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-linux-arm64"
-      sha256 "REPLACE_WITH_LINUX_ARM64_SHA256"
+      url "https://github.com/adanb13/cirdan/releases/download/v0.8.1/cirdan-linux-arm64"
+      sha256 "5758fbe9d911dca5f65637fe910015e16cb12648a99c20e5c993eeac4c7db9c0"
     end
     on_intel do
-      url "https://github.com/adanb13/cirdan/releases/download/v0.7.0/cirdan-linux-x64"
-      sha256 "REPLACE_WITH_LINUX_X64_SHA256"
+      url "https://github.com/adanb13/cirdan/releases/download/v0.8.1/cirdan-linux-x64"
+      sha256 "e67a2a97bffb1c89f52fa5d64f7bfe667128aa51906087eb562a81d33d74c311"
     end
   end
 
