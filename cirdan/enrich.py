@@ -148,6 +148,8 @@ def build_enrichment_brief(engine: CirdanEngine) -> str:
 def resolve_enrich_command(engine: CirdanEngine, override: str | None) -> str | None:
     if override:
         return override
+    if engine.config.enrich.command:
+        return engine.config.enrich.command
     from cirdan.agents.installer import detect_enrich_command
 
     detected = detect_enrich_command()

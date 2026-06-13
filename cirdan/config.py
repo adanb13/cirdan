@@ -52,6 +52,13 @@ class ResponderConfig(BaseModel):
     max_concurrent: int = 1
 
 
+class EnrichConfig(BaseModel):
+    """Agent graph enrichment; `command` is normally set by the setup prompt."""
+
+    # Placeholder: {brief_file}
+    command: str | None = None  # e.g. 'claude -p "Work through the Cirdan graph-enrichment brief at {brief_file}"'
+
+
 class AdaptersConfig(BaseModel):
     auto_detect: bool = True
     enabled: list[str] = Field(default_factory=list)
@@ -85,6 +92,7 @@ class CirdanConfig(BaseModel):
     telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
     responder: ResponderConfig = Field(default_factory=ResponderConfig)
+    enrich: EnrichConfig = Field(default_factory=EnrichConfig)
 
     @property
     def root_path(self) -> Path:

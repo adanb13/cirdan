@@ -445,16 +445,30 @@ def enrich(
     system: bool = typer.Option(False, "--system", help="Use the machine-level scope (~/.cirdan)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Write/print the brief without invoking the agent."),
     command: str = typer.Option(None, "--command", help="Agent command template ({brief_file} placeholder)."),
+    agent: str = typer.Option(None, "--agent", help="Which detected agent CLI to use (claude, codex, hermes, …)."),
     timeout: float = typer.Option(900.0, "--timeout", help="Seconds before the agent run is killed."),
 ):
     """Hand your agent an enrichment brief so it can contribute the knowledge
     the deterministic scanners missed (docs, implied dependencies, IaC links)."""
     import asyncio
+    import shutil as _shutil
 
     from cirdan.enrich import (
         build_enrichment_brief, enrichment_targets, resolve_enrich_command,
         run_enrichment, summarize_targets,
     )
+
+    if command is None and agent is not None:
+        from cirdan.agents.installer import AGENT_ENRICH_COMMANDS
+
+        known = dict(AGENT_ENRICH_COMMANDS)
+        if agent not in known:
+            console.print(f"[red]Unknown agent '{agent}'[/red] — supported: {', '.join(known)}")
+            raise typer.Exit(1)
+        if not _shutil.which(agent):
+            console.print(f"[red]{agent} is not on PATH[/red]")
+            raise typer.Exit(1)
+        command = known[agent]
 
     engine = _open_engine(path, system=system)
     console.print(f"Targets: [bold]{summarize_targets(enrichment_targets(engine))}[/bold]")

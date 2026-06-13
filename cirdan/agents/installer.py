@@ -269,45 +269,71 @@ def detect_platforms() -> list[str]:
     return found
 
 
-# Agent CLIs we can auto-wire as incident responders, in preference order.
+# Agent CLIs we know how to invoke headlessly, in preference order. The prompt
+# argument may itself contain a {brief_file} placeholder, filled at run time.
+AGENT_CLI_INVOCATIONS = [
+    ("claude", 'claude -p "{prompt}"'),
+    ("codex", 'codex exec "{prompt}"'),
+    ("gemini", 'gemini -p "{prompt}"'),
+    ("hermes", 'hermes -z "{prompt}"'),
+    ("opencode", 'opencode run "{prompt}"'),
+    ("cursor-agent", 'cursor-agent -p "{prompt}"'),
+    ("copilot", 'copilot -p "{prompt}"'),
+    ("qwen", 'qwen -p "{prompt}"'),
+    ("goose", 'goose run -t "{prompt}"'),
+    ("aider", 'aider --yes --message "{prompt}"'),
+]
+
+_RESPONDER_PROMPT = "Respond to the Cirdan incident brief at {brief_file}"
+_ENRICH_PROMPT = "Work through the Cirdan graph-enrichment brief at {brief_file}"
+
 AGENT_RESPONDER_COMMANDS = [
-    ("claude", 'claude -p "Respond to the Cirdan incident brief at {brief_file}"'),
-    ("codex", 'codex exec "Respond to the Cirdan incident brief at {brief_file}"'),
-    ("gemini", 'gemini -p "Respond to the Cirdan incident brief at {brief_file}"'),
-    ("aider", 'aider --yes --message "Respond to the Cirdan incident brief at {brief_file}"'),
+    (name, template.format(prompt=_RESPONDER_PROMPT)) for name, template in AGENT_CLI_INVOCATIONS
 ]
 
-
-# Same CLIs, pointed at a graph-enrichment brief instead of an incident.
 AGENT_ENRICH_COMMANDS = [
-    ("claude", 'claude -p "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
-    ("codex", 'codex exec "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
-    ("gemini", 'gemini -p "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
-    ("aider", 'aider --yes --message "Work through the Cirdan graph-enrichment brief at {brief_file}"'),
+    (name, template.format(prompt=_ENRICH_PROMPT)) for name, template in AGENT_CLI_INVOCATIONS
 ]
+
+
+def _detect_commands(table: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    import shutil
+
+    return [(name, command) for name, command in table if shutil.which(name)]
+
+
+def detect_enrich_commands() -> list[tuple[str, str]]:
+    """All agent CLIs on PATH we can point at an enrichment brief, in preference order."""
+    return _detect_commands(AGENT_ENRICH_COMMANDS)
 
 
 def detect_enrich_command() -> tuple[str, str] | None:
-    import shutil
+    detected = detect_enrich_commands()
+    return detected[0] if detected else None
 
-    for name, command in AGENT_ENRICH_COMMANDS:
-        if shutil.which(name):
-            return name, command
-    return None
+
+def detect_agent_commands() -> list[tuple[str, str]]:
+    """All agent CLIs on PATH we can wire as incident responders, in preference order."""
+    return _detect_commands(AGENT_RESPONDER_COMMANDS)
 
 
 def detect_agent_command() -> tuple[str, str] | None:
     """First agent CLI on PATH that we know how to invoke for incident response."""
-    import shutil
-
-    for name, command in AGENT_RESPONDER_COMMANDS:
-        if shutil.which(name):
-            return name, command
-    return None
+    detected = detect_agent_commands()
+    return detected[0] if detected else None
 
 
 def write_responder_config(root: Path, command: str) -> Path:
     """Set responder.command in <root>/cirdan.yaml, preserving any other settings."""
+    return _merge_yaml_section(root, "responder", enabled=True, command=command)
+
+
+def write_enrich_config(root: Path, command: str) -> Path:
+    """Set enrich.command in <root>/cirdan.yaml, preserving any other settings."""
+    return _merge_yaml_section(root, "enrich", command=command)
+
+
+def _merge_yaml_section(root: Path, section: str, **values) -> Path:
     import yaml
 
     path = root / "cirdan.yaml"
@@ -317,9 +343,7 @@ def write_responder_config(root: Path, command: str) -> Path:
             data = yaml.safe_load(path.read_text()) or {}
         except yaml.YAMLError:
             data = {}
-    responder = data.setdefault("responder", {})
-    responder["enabled"] = True
-    responder["command"] = command
+    data.setdefault(section, {}).update(values)
     path.write_text(yaml.safe_dump(data, sort_keys=False))
     return path
 

@@ -111,6 +111,37 @@ def test_dry_run_spawns_nothing(engine, monkeypatch):
     assert "definitely-not-a-real-binary" in result.output
 
 
+def test_resolve_enrich_command_prefers_config(engine, monkeypatch):
+    from cirdan.enrich import resolve_enrich_command
+
+    monkeypatch.setattr(engine.config.enrich, "command", "configured-agent {brief_file}")
+    assert resolve_enrich_command(engine, None) == "configured-agent {brief_file}"
+    assert resolve_enrich_command(engine, "override {brief_file}") == "override {brief_file}"
+
+
+def test_enrich_agent_flag(engine, monkeypatch):
+    import shutil as _shutil
+
+    from typer.testing import CliRunner
+
+    from cirdan.cli.main import app
+
+    monkeypatch.setenv("CIRDAN_NO_UPDATE_CHECK", "1")
+    monkeypatch.setattr(_shutil, "which",
+                        lambda name, *a, **k: f"/usr/bin/{name}" if name == "codex" else None)
+    result = CliRunner().invoke(app, [
+        "enrich", str(engine.config.root_path), "--dry-run", "--agent", "codex",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "codex exec" in result.output
+
+    result = CliRunner().invoke(app, [
+        "enrich", str(engine.config.root_path), "--dry-run", "--agent", "not-an-agent",
+    ])
+    assert result.exit_code == 1
+    assert "supported:" in result.output and "hermes" in result.output
+
+
 def test_mcp_contribution_tools(engine):
     mcp_memory = pytest.importorskip("mcp.shared.memory")
     import json

@@ -68,3 +68,46 @@ def test_project_scope_instructions_unflagged(tmp_path):
     text = (tmp_path / "CLAUDE.md").read_text()
     assert "cirdan map ." in text
     assert "--system" not in text
+
+
+def test_agent_invocation_tables_keep_brief_placeholder():
+    from cirdan.agents.installer import AGENT_ENRICH_COMMANDS, AGENT_RESPONDER_COMMANDS
+
+    names = [name for name, _ in AGENT_ENRICH_COMMANDS]
+    for expected in ("claude", "codex", "gemini", "hermes", "opencode",
+                     "cursor-agent", "copilot", "qwen", "goose", "aider"):
+        assert expected in names
+    assert names == [name for name, _ in AGENT_RESPONDER_COMMANDS]
+    for _, command in AGENT_ENRICH_COMMANDS + AGENT_RESPONDER_COMMANDS:
+        assert "{brief_file}" in command
+        assert "{prompt}" not in command
+
+
+def test_detect_commands_plural_returns_all_in_preference_order(monkeypatch):
+    import shutil
+
+    from cirdan.agents.installer import detect_agent_commands, detect_enrich_command, detect_enrich_commands
+
+    on_path = {"codex", "hermes", "aider"}
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: f"/usr/bin/{name}" if name in on_path else None)
+    detected = detect_enrich_commands()
+    assert [name for name, _ in detected] == ["codex", "hermes", "aider"]
+    assert detect_enrich_command() == detected[0]
+    assert [name for name, _ in detect_agent_commands()] == ["codex", "hermes", "aider"]
+
+    monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
+    assert detect_enrich_commands() == []
+    assert detect_enrich_command() is None
+
+
+def test_write_enrich_config_preserves_other_sections(tmp_path):
+    import yaml
+
+    from cirdan.agents.installer import write_enrich_config, write_responder_config
+
+    write_responder_config(tmp_path, 'claude -p "respond to {brief_file}"')
+    path = write_enrich_config(tmp_path, 'hermes -z "enrich from {brief_file}"')
+    data = yaml.safe_load(path.read_text())
+    assert data["enrich"]["command"].startswith("hermes -z")
+    assert data["responder"]["enabled"] is True
+    assert data["responder"]["command"].startswith("claude -p")

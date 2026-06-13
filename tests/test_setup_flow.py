@@ -286,7 +286,7 @@ def test_enrich_noop_when_no_targets(enrich_project, monkeypatch):
 def test_enrich_step_run_with_fake_agent(enrich_project, tmp_path, monkeypatch):
     import stat
 
-    import cirdan.enrich as enrich_mod
+    import cirdan.agents.installer as installer
     from cirdan.cli.setup_flow import EnrichStep
 
     repo_venv_cirdan = Path(__file__).parent.parent / ".venv" / "bin" / "cirdan"
@@ -298,8 +298,8 @@ def test_enrich_step_run_with_fake_agent(enrich_project, tmp_path, monkeypatch):
         f"--agent fake --path {enrich_project}\n"
     )
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setattr(enrich_mod, "resolve_enrich_command",
-                        lambda engine, override: f"{script} {{brief_file}}")
+    monkeypatch.setattr(installer, "detect_enrich_commands",
+                        lambda: [("fake", f"{script} {{brief_file}}")])
 
     step = EnrichStep(enrich_project, quiet, quiet)
     assert step.run() is True
@@ -307,6 +307,93 @@ def test_enrich_step_run_with_fake_agent(enrich_project, tmp_path, monkeypatch):
     assert done is True
     assert "agent contributions" in msg
     assert step.prompt_default(done) is False
+
+
+def test_choose_agent_selection(monkeypatch):
+    import typer
+
+    from cirdan.cli.setup_flow import choose_agent
+
+    detected = [("claude", "claude {brief_file}"), ("codex", "codex {brief_file}")]
+    assert choose_agent(quiet, detected, interactive=False) == detected[0]
+    assert choose_agent(quiet, [detected[1]], interactive=True) == detected[1]
+    monkeypatch.setattr(typer, "prompt", lambda *a, **k: 2)
+    assert choose_agent(quiet, detected, interactive=True) == detected[1]
+    monkeypatch.setattr(typer, "prompt", lambda *a, **k: 99)  # out of range → preference order
+    assert choose_agent(quiet, detected, interactive=True) == detected[0]
+
+
+def test_enrich_status_lists_multiple_agents(enrich_project, monkeypatch):
+    from cirdan.cli.setup_flow import EnrichStep
+
+    monkeypatch.setattr(shutil, "which",
+                        lambda name, *a, **k: f"/usr/bin/{name}" if name in ("claude", "hermes") else None)
+    step = EnrichStep(enrich_project, quiet, quiet)
+    done, msg = step.status()
+    assert done is False
+    assert "agents: claude, hermes" in msg
+    assert step.prompt_default(done) is True
+
+
+def test_enrich_status_with_configured_command(enrich_project):
+    from cirdan.agents.installer import write_enrich_config
+    from cirdan.cli.setup_flow import EnrichStep
+
+    write_enrich_config(enrich_project, "myagent --go {brief_file}")
+    step = EnrichStep(enrich_project, quiet, quiet)
+    done, msg = step.status()
+    assert done is False
+    assert "agent: myagent, configured" in msg
+    assert step.prompt_default(done) is True
+
+
+def test_enrich_run_selects_agent_and_persists(enrich_project, tmp_path, monkeypatch):
+    import stat
+
+    import typer
+    import yaml
+
+    import cirdan.agents.installer as installer
+    from cirdan.cli.setup_flow import EnrichStep
+
+    repo_venv_cirdan = Path(__file__).parent.parent / ".venv" / "bin" / "cirdan"
+    cirdan_bin = str(repo_venv_cirdan) if repo_venv_cirdan.is_file() else shutil.which("cirdan")
+    script = tmp_path / "fake-agent.sh"
+    script.write_text(
+        f"#!/bin/sh\n{cirdan_bin} graph add-edge checkout-api payments_jobs WRITES_TO "
+        f"--evidence 'fake-agent: checkout publishes payment jobs' "
+        f"--agent fake --path {enrich_project}\n"
+    )
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+
+    monkeypatch.setattr(installer, "detect_enrich_commands",
+                        lambda: [("decoy", "decoy {brief_file}"), ("fake", f"{script} {{brief_file}}")])
+    monkeypatch.setattr(typer, "prompt", lambda *a, **k: 2)
+
+    step = EnrichStep(enrich_project, quiet, quiet)
+    step.interactive = True
+    assert step.run() is True
+    data = yaml.safe_load((enrich_project / "cirdan.yaml").read_text())
+    assert "fake-agent.sh" in data["enrich"]["command"]
+    assert data["enrich"]["command"].endswith("{brief_file}")
+    done, msg = step.status()
+    assert done is True and "agent contributions" in msg
+
+
+def test_responder_run_selects_agent(project, monkeypatch):
+    import typer
+
+    import cirdan.agents.installer as installer
+    from cirdan.cli.setup_flow import ResponderStep
+
+    monkeypatch.setattr(installer, "detect_agent_commands",
+                        lambda: [("claude", 'claude -p "x {brief_file}"'),
+                                 ("hermes", 'hermes -z "x {brief_file}"')])
+    monkeypatch.setattr(typer, "prompt", lambda *a, **k: 2)
+    step = ResponderStep(project, quiet, quiet)
+    step.interactive = True
+    assert step.run() is True
+    assert "hermes -z" in (project / "cirdan.yaml").read_text()
 
 
 def test_setup_all_includes_enrich(tmp_path, monkeypatch):

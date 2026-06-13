@@ -23,10 +23,30 @@ from cirdan.config import CirdanConfig, load_config
 DAEMON_CONFIRM_TIMEOUT = 20.0
 
 
+def choose_agent(console: Console, detected: list[tuple[str, str]], interactive: bool) -> tuple[str, str]:
+    """Pick one of the detected (name, command) agent CLIs; preference order wins by default."""
+    import typer
+
+    if len(detected) == 1:
+        return detected[0]
+    if not interactive:
+        console.print(f"  using [bold]{detected[0][0]}[/bold] — also detected: "
+                      + ", ".join(name for name, _ in detected[1:]))
+        return detected[0]
+    console.print("  multiple agent CLIs detected:")
+    for i, (name, _) in enumerate(detected, 1):
+        console.print(f"    {i}. {name}")
+    choice = typer.prompt("  use which agent?", default=1, type=int)
+    if not 1 <= choice <= len(detected):
+        choice = 1
+    return detected[choice - 1]
+
+
 class SetupStep:
     name = "step"
     description = ""
     prompt_default_yes = True
+    interactive = False  # set by run_guided; gates sub-prompts inside run()
 
     def __init__(self, root: Path, console: Console, status_console: Console, system: bool = False):
         self.root = root
@@ -157,15 +177,15 @@ class ResponderStep(SetupStep):
         return False, "brief-only mode (no agent command)"
 
     def run(self) -> bool:
-        from cirdan.agents.installer import detect_agent_command, write_responder_config
+        from cirdan.agents.installer import detect_agent_commands, write_responder_config
 
         command = self.command
         if command is None:
-            detected = detect_agent_command()
-            if detected is None:
+            detected = detect_agent_commands()
+            if not detected:
                 self.console.print("  [yellow]no known agent CLI found[/yellow] — set responder.command manually")
                 return False
-            _, command = detected
+            _, command = choose_agent(self.console, detected, self.interactive)
         target = (Path.home() / ".cirdan") if self.system else self.root
         target.mkdir(parents=True, exist_ok=True)
         path = write_responder_config(target, command)
@@ -274,21 +294,26 @@ class EnrichStep(SetupStep):
         summary = summarize_targets(targets)
         if summary == "0 targets":
             return True, "nothing to enrich — scanners left no gaps"
-        from cirdan.agents.installer import detect_enrich_command
+        if engine.config.enrich.command:
+            self._worthwhile = True
+            agent = engine.config.enrich.command.split()[0]
+            return False, f"no agent contributions yet — {summary} (agent: {agent}, configured)"
+        from cirdan.agents.installer import detect_enrich_commands
 
-        detected = detect_enrich_command()
-        if detected is None:
+        detected = detect_enrich_commands()
+        if not detected:
             return False, f"no agent contributions yet — {summary}, but no agent CLI found (cirdan enrich --command …)"
         self._worthwhile = True
-        return False, f"no agent contributions yet — {summary} (agent: {detected[0]})"
+        names = ", ".join(name for name, _ in detected)
+        label = "agents" if len(detected) > 1 else "agent"
+        return False, f"no agent contributions yet — {summary} ({label}: {names})"
 
     def run(self) -> bool:
         import asyncio
 
         from cirdan.engine import CirdanEngine
         from cirdan.enrich import (
-            build_enrichment_brief, enrichment_targets, resolve_enrich_command,
-            run_enrichment, summarize_targets,
+            build_enrichment_brief, enrichment_targets, run_enrichment, summarize_targets,
         )
 
         engine = CirdanEngine(self._config())
@@ -296,10 +321,19 @@ class EnrichStep(SetupStep):
         if summary == "0 targets":
             self.console.print("  nothing to enrich — scanners left no gaps")
             return True
-        template = resolve_enrich_command(engine, None)
+        template = engine.config.enrich.command
         if template is None:
-            self.console.print("  [yellow]no known agent CLI found[/yellow] — run `cirdan enrich --command …` manually")
-            return False
+            from cirdan.agents.installer import detect_enrich_commands, write_enrich_config
+
+            detected = detect_enrich_commands()
+            if not detected:
+                self.console.print("  [yellow]no known agent CLI found[/yellow] — run `cirdan enrich --command …` manually")
+                return False
+            _, template = choose_agent(self.console, detected, self.interactive)
+            target = (Path.home() / ".cirdan") if self.system else self.root
+            target.mkdir(parents=True, exist_ok=True)
+            path = write_enrich_config(target, template)
+            self.console.print(f"  enrich.command saved in {path}")
         brief = build_enrichment_brief(engine)
         agent = template.split()[0]
         self.console.print(f"  running [bold]{agent}[/bold] against the brief — {summary}, up to 15 min")
@@ -351,6 +385,7 @@ def run_guided(root: Path, console: Console, status_console: Console,
     results: dict[str, bool] = {}
     for step in build_steps(root, console, status_console, platforms=platforms,
                             responder_command=responder_command, system=system):
+        step.interactive = interactive
         done, state = step.status()
         console.print(f"\n[bold]{step.name}[/bold] — {step.description}")
         console.print(f"  current: {state}")
