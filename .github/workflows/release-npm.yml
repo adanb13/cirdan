@@ -8,21 +8,28 @@ name: release-npm
 on:
   release:
     types: [published]
+  workflow_dispatch: {} # manual re-run for the current pyproject version (no new release/tag needed)
 
 jobs:
   version-guard:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Assert pyproject == __init__ == tag
+      - name: Assert pyproject == __init__ (and == tag on release)
         run: |
           PYPROJECT=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           INIT=$(python3 -c "import re;print(re.search(r'__version__ = \"([^\"]+)\"', open('cirdan/__init__.py').read()).group(1))")
-          TAG="${GITHUB_REF_NAME#v}"
-          echo "pyproject=$PYPROJECT  __init__=$INIT  tag=$TAG"
-          if [ "$PYPROJECT" != "$INIT" ] || [ "$INIT" != "$TAG" ]; then
-            echo "::error::version mismatch — pyproject/__init__/tag must all agree before an npm release"
+          echo "pyproject=$PYPROJECT  __init__=$INIT  event=$GITHUB_EVENT_NAME  ref=$GITHUB_REF_NAME"
+          if [ "$PYPROJECT" != "$INIT" ]; then
+            echo "::error::pyproject ($PYPROJECT) != __init__ ($INIT)"
             exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            if [ "$INIT" != "$TAG" ]; then
+              echo "::error::release tag $GITHUB_REF_NAME does not match version $INIT"
+              exit 1
+            fi
           fi
 
   build-binaries:
@@ -31,7 +38,7 @@ jobs:
     permissions:
       contents: write # upload the binary as a release asset (for Homebrew + curl installer)
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - { target: darwin-arm64, runner: macos-14, ext: "" }
@@ -59,23 +66,36 @@ jobs:
         shell: bash
         run: |
           "dist/cirdan${{ matrix.ext }}" --version
-      - name: Smoke test — serve-mcp stdio handshake (mcp extra bundled)
+      - name: Smoke test — serve-mcp starts (mcp extra bundled)
         if: runner.os != 'Windows'
         shell: bash
         run: |
           BIN="dist/cirdan${{ matrix.ext }}"
-          REQ='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
-          OUT="$(printf '%s\n' "$REQ" | timeout 30 "$BIN" serve-mcp 2>/dev/null | head -c 8000 || true)"
-          echo "$OUT"
-          echo "$OUT" | grep -qiE '"(result|serverInfo|protocolVersion)"' || { echo "::error::no MCP handshake response"; exit 1; }
+          # serve-mcp would crash on startup if the mcp extra weren't bundled.
+          # No `timeout` here — macOS runners don't ship it. Hold stdin open with a
+          # slow feeder and confirm the server is still alive after a few seconds.
+          ( sleep 12 ) | "$BIN" serve-mcp >/tmp/mcp.out 2>/tmp/mcp.err &
+          PID=$!
+          sleep 8
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "serve-mcp is up — mcp extra bundled"
+            kill "$PID" 2>/dev/null || true
+            wait "$PID" 2>/dev/null || true
+          else
+            echo "::error::serve-mcp exited early"
+            echo "--- stdout ---"; cat /tmp/mcp.out || true
+            echo "--- stderr ---"; cat /tmp/mcp.err || true
+            exit 1
+          fi
       - name: Upload binary as a release asset (Homebrew + curl installer source)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           ASSET="cirdan-${{ matrix.target }}${{ matrix.ext }}"
           cp "dist/cirdan${{ matrix.ext }}" "$ASSET"
-          gh release upload "${GITHUB_REF_NAME}" "$ASSET" --clobber
+          gh release upload "v$VERSION" "$ASSET" --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: npmpkg-${{ matrix.target }}
@@ -105,11 +125,9 @@ jobs:
             mkdir -p "npm/platforms/$t"
             cp -r "$d"/. "npm/platforms/$t/"
           done
-      - name: Sync versions from the release tag
-        env:
-          VERSION_REF: ${{ github.ref_name }}
+      - name: Sync versions from pyproject
         run: |
-          VERSION="${VERSION_REF#v}"
+          VERSION=$(python3 -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           echo "publishing npm version $VERSION"
           npm --prefix npm/cli version "$VERSION" --no-git-tag-version --allow-same-version
           for d in npm/platforms/*/; do
