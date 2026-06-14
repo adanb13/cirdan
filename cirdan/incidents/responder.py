@@ -2,9 +2,9 @@
 
 When an incident opens, Cirdan composes an evidence-backed brief on disk and
 (optionally) invokes a configured agent command pointed at it — e.g.
-`claude -p "Respond to the Cirdan incident brief at {brief_file}"`. The agent
-then works through Cirdan's own tools, whose actions attach themselves to the
-incident and are verified by the existing pipeline.
+`claude -p "Respond to the Cirdan incident brief at {brief_file}"`. Cirdan
+provides context and safe action affordances; the agent still runs with its
+normal inherited session access.
 
 Everything here is opt-in (`responder.enabled`), cooldown-limited per incident
 condition, and runs without a shell (templates are rendered then shlex-split).
@@ -18,6 +18,7 @@ import time
 
 import httpx
 
+from cirdan.access.redaction import redact_text
 from cirdan.engine import CirdanEngine
 from cirdan.incidents.store import Incident
 from cirdan.util import now_iso
@@ -27,20 +28,23 @@ BRIEF_INSTRUCTIONS = """\
 
 You are responding to a live infrastructure incident detected by Cirdan.
 
-1. Investigate first:
+1. Investigate first. Cirdan can provide context:
    - `cirdan explain {incident_id}` for the latest evidence
    - `cirdan query "what depends on <component>?"` for blast radius
-   - `cirdan actions run <read-action-id>` for logs/inspect/describe (read actions are safe)
-2. If a remediation is warranted, use the available actions listed above:
+   - `cirdan actions run <read-action-id>` for logs/inspect/describe when an action fits
+2. You are not limited to Cirdan actions. Use the session's normal tools and
+   CLIs when that is the right way to diagnose or remediate.
+3. If a remediation uses one of the available Cirdan actions listed above:
    - `cirdan actions run <action-id> --yes`
-   - Cirdan records the action against this incident automatically.
-3. Verify the outcome:
+   - Cirdan records and verifies that action against this incident automatically.
+4. Verify the outcome:
    - `cirdan verify <act-record-id>` (also run automatically for write actions)
    - The incident resolves on its own once the underlying condition stays clear.
-4. If no safe action exists, summarize the root cause and what a human should do.
+5. Finish with a concise summary of what you found, what you changed, and how
+   you verified it. Cirdan records the responder invocation and output tail in
+   `cirdan-out/audit.jsonl`.
 
 Cirdan inherits this session's access — it can only do what you can already do.
-All of your actions are recorded in cirdan-out/audit.jsonl.
 """
 
 
@@ -140,7 +144,7 @@ class IncidentResponder:
         briefs_dir = self.engine.config.output_dir / "incidents" / "briefs"
         briefs_dir.mkdir(parents=True, exist_ok=True)
         path = briefs_dir / f"{incident.id}.md"
-        path.write_text("\n".join(lines))
+        path.write_text(redact_text("\n".join(lines)))
         return str(path)
 
     # -- notify ---------------------------------------------------------------------

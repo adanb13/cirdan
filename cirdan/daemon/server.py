@@ -27,21 +27,24 @@ class CirdanDaemon:
         self.running = False
         self._lock = DaemonLock(engine.config.output_dir / "cirdand.lock")
 
+    async def _sync(self, func, *args, **kwargs):
+        return func(*args, **kwargs)
+
     # -- loop bodies -----------------------------------------------------------
 
     async def _access_loop(self) -> None:
         while True:
-            await asyncio.to_thread(self.engine.refresh_access)
+            await self._sync(self.engine.refresh_access)
             await asyncio.sleep(self.engine.config.daemon.access_interval)
 
     async def _fingerprint_loop(self) -> None:
         while True:
-            await asyncio.to_thread(self.engine.refresh_fingerprint)
+            await self._sync(self.engine.refresh_fingerprint)
             await asyncio.sleep(self.engine.config.daemon.fingerprint_interval)
 
     async def _graph_loop(self) -> None:
         while True:
-            await asyncio.to_thread(self.engine.discover)
+            await self._sync(self.engine.discover)
             await asyncio.sleep(self.engine.config.daemon.graph_interval)
 
     async def _incident_loop(self) -> None:
@@ -55,7 +58,7 @@ class CirdanDaemon:
                     timeout=self.engine.config.daemon.incident_interval,
                 )
             self._wake_incidents.clear()
-            touched = await asyncio.to_thread(self.engine.detect_incidents)
+            touched = await self._sync(self.engine.detect_incidents)
             for incident in touched:
                 if self.on_event:
                     self.on_event({"kind": "incident", "incident": incident.model_dump()})
@@ -64,13 +67,13 @@ class CirdanDaemon:
                         asyncio.get_running_loop().create_task(responder.invoke(incident))
                     )
                 elif incident.status == "resolved":
-                    await asyncio.to_thread(responder.notify, incident, "resolved")
+                    await self._sync(responder.notify, incident, "resolved")
 
     async def _export_loop(self) -> None:
         while True:
             await asyncio.sleep(self.engine.config.daemon.export_interval)
-            await asyncio.to_thread(self.engine.export_artifacts)
-            await asyncio.to_thread(self.engine.events.prune)
+            await self._sync(self.engine.export_artifacts)
+            await self._sync(self.engine.events.prune)
 
     async def _watch_loop(self, adapter) -> None:
         async for raw in adapter.watch():
@@ -83,7 +86,7 @@ class CirdanDaemon:
             else:
                 continue
             if event.severity != "info" or significant:
-                await asyncio.to_thread(self.engine.events.add, event)
+                await self._sync(self.engine.events.add, event)
             if self.on_event:
                 self.on_event({"kind": "event", "event": event.model_dump()})
             if significant:
@@ -111,10 +114,10 @@ class CirdanDaemon:
         # loops would double-ingest events and double-fire the responder.
         self._lock.acquire()
         engine.audit.write("daemon", "cirdand starting", root=str(engine.config.root_path))
-        await asyncio.to_thread(engine.refresh_access)
-        await asyncio.to_thread(engine.refresh_fingerprint)
-        await asyncio.to_thread(engine.discover)
-        await asyncio.to_thread(engine.export_artifacts)
+        await self._sync(engine.refresh_access)
+        await self._sync(engine.refresh_fingerprint)
+        await self._sync(engine.discover)
+        await self._sync(engine.export_artifacts)
 
         self._spawn("access", self._access_loop)
         self._spawn("fingerprint", self._fingerprint_loop)

@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from cirdan import __version__
 from cirdan.engine import CirdanEngine
 from tests.conftest import FIXTURES, make_access
 
@@ -28,6 +29,7 @@ def client(compose_app, monkeypatch, tmp_path):
 
 def test_health_and_graph(client):
     assert client.get("/health").json()["status"] == "ok"
+    assert client.get("/openapi.json").json()["info"]["version"] == __version__
     graph = client.get("/graph").json()
     assert graph["counts"]["nodes"] > 5
 

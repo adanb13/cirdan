@@ -13,7 +13,7 @@ import uuid
 
 from pydantic import BaseModel, Field
 
-from cirdan.access.redaction import redact_text
+from cirdan.access.redaction import redact_obj, redact_text
 from cirdan.adapters.base import ActionResult, ActionSpec
 from cirdan.adapters.registry import get_adapters
 from cirdan.engine import CirdanEngine
@@ -107,10 +107,11 @@ def execute_action(engine: CirdanEngine, spec: ActionSpec) -> ActionRecord:
 
 
 def _persist(engine: CirdanEngine, record: ActionRecord) -> None:
+    clean = ActionRecord.model_validate(redact_obj(record.model_dump()))
     with engine.store.lock:
         engine.store.conn.execute(
             "INSERT OR REPLACE INTO actions (id, status, created_at, data) VALUES (?,?,?,?)",
-            (record.record_id, record.status, record.created_at, record.model_dump_json()),
+            (clean.record_id, clean.status, clean.created_at, clean.model_dump_json()),
         )
         engine.store.conn.commit()
 

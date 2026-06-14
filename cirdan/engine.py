@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+from pydantic import ValidationError
+
 from cirdan.access.context import AccessContext, detect_access
 from cirdan.audit import AuditWriter
 from cirdan.config import CirdanConfig
@@ -71,8 +73,11 @@ class CirdanEngine:
         if self._access is None:
             cached = self.store.kv_get("access_context")
             if cached:
-                ctx = AccessContext.model_validate_json(cached)
-                if _age_seconds(ctx.detected_at) < ACCESS_TTL_SECONDS:
+                try:
+                    ctx = AccessContext.model_validate_json(cached)
+                except ValidationError:
+                    ctx = None
+                if ctx is not None and _age_seconds(ctx.detected_at) < ACCESS_TTL_SECONDS:
                     self._access = ctx
             if self._access is None:
                 self.refresh_access()
@@ -89,8 +94,11 @@ class CirdanEngine:
         if self._fingerprint is None:
             cached = self.store.kv_get("fingerprint")
             if cached:
-                fp = Fingerprint.model_validate_json(cached)
-                if _age_seconds(fp.detected_at) < ACCESS_TTL_SECONDS:
+                try:
+                    fp = Fingerprint.model_validate_json(cached)
+                except ValidationError:
+                    fp = None
+                if fp is not None and _age_seconds(fp.detected_at) < ACCESS_TTL_SECONDS:
                     self._fingerprint = fp
             if self._fingerprint is None:
                 self.refresh_fingerprint()
@@ -148,7 +156,7 @@ class CirdanEngine:
         from cirdan.ui.render import render_html
         from cirdan.ui.view_spec import ViewComponent, ViewSpec, graph_component_data
         from cirdan.util import dump_json
-        from cirdan.access.redaction import redact_obj
+        from cirdan.access.redaction import redact_obj, redact_text
 
         from cirdan.graph.communities import compute_communities
 
@@ -170,7 +178,7 @@ class CirdanEngine:
 
         report = build_infra_report(self.store, fp, access, findings, incidents,
                                     communities=communities)
-        (out / "INFRA_REPORT.md").write_text(report)
+        (out / "INFRA_REPORT.md").write_text(redact_text(report))
         nodes, edges = self.store.all_nodes(), self.store.all_edges()
         spec = ViewSpec(
             view_type="topology",
@@ -191,7 +199,7 @@ class CirdanEngine:
                               data=graph_component_data(nodes, edges, communities=communities)),
             ],
         )
-        (out / "infra.html").write_text(render_html(spec))
+        (out / "infra.html").write_text(redact_text(render_html(spec)))
         return [str(out / name) for name in (
             "infra.html", "INFRA_REPORT.md", "infra.graph.json", "fingerprint.json",
             "access.json", "services.json", "dependencies.json", "runtime-state.json",
@@ -221,7 +229,7 @@ class CirdanEngine:
         from cirdan.graph.schema import Node, NodeType, Origin
         from cirdan.ui.render import render_html, render_markdown, view_slug
         from cirdan.util import dump_json
-        from cirdan.access.redaction import redact_obj
+        from cirdan.access.redaction import redact_obj, redact_text
 
         out = self.config.output_dir / "views" / "generated"
         out.mkdir(parents=True, exist_ok=True)
@@ -229,11 +237,11 @@ class CirdanEngine:
         paths = []
         if "html" in formats:
             path = out / f"{slug}.html"
-            path.write_text(render_html(spec))
+            path.write_text(redact_text(render_html(spec)))
             paths.append(str(path))
         if "md" in formats:
             path = out / f"{slug}.md"
-            path.write_text(render_markdown(spec))
+            path.write_text(redact_text(render_markdown(spec)))
             paths.append(str(path))
         if "json" in formats:
             path = out / f"{slug}.view.json"

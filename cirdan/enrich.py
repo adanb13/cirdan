@@ -6,6 +6,7 @@ from __future__ import annotations
 import shlex
 from pathlib import Path
 
+from cirdan.access.redaction import redact_text
 from cirdan.engine import CirdanEngine
 from cirdan.graph.contrib import agent_contributions
 from cirdan.graph.schema import Confidence, NodeType, Origin, Relation
@@ -141,7 +142,7 @@ def build_enrichment_brief(engine: CirdanEngine) -> str:
     out_dir = engine.config.output_dir / "enrichment"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "brief.md"
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text(redact_text("\n".join(lines) + "\n"))
     return str(path)
 
 
