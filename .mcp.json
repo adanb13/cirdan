@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cirdan": {
+      "command": "npx",
+      "args": ["-y", "@cirdanops/cli", "serve-mcp"]
+    }
+  }
+}
