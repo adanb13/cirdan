@@ -3,6 +3,7 @@
 # Cirdan
 
 [![PyPI](https://img.shields.io/pypi/v/cirdanops)](https://pypi.org/project/cirdanops/)
+[![npm](https://img.shields.io/npm/v/%40cirdanops%2Fcli?logo=npm)](https://www.npmjs.com/package/@cirdanops/cli)
 [![Python](https://img.shields.io/pypi/pyversions/cirdanops)](https://pypi.org/project/cirdanops/)
 [![Downloads](https://static.pepy.tech/badge/cirdanops)](https://pepy.tech/projects/cirdanops)
 [![CI](https://github.com/adanb13/cirdan/actions/workflows/ci.yml/badge.svg)](https://github.com/adanb13/cirdan/actions/workflows/ci.yml)
