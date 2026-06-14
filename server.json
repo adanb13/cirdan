@@ -7,14 +7,14 @@
     "url": "https://github.com/adanb13/cirdan",
     "source": "github"
   },
-  "version": "0.8.3",
+  "version": "0.8.4",
   "websiteUrl": "https://github.com/adanb13/cirdan",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cirdanops/cli",
-      "version": "0.8.3",
+      "version": "0.8.4",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -31,7 +31,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "cirdanops",
-      "version": "0.8.3",
+      "version": "0.8.4",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
