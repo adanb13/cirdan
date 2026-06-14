@@ -21,6 +21,22 @@ Cirdan lets the agent operate inside the system using the access the agent alrea
 Cirdan generates views only when the human asks to see something.
 ```
 
+## Quickstart
+
+```bash
+uv tool install "cirdanops[all]"   # or npm / brew / curl — see Install below
+cirdan setup                       # one command: hook your agents, register MCP,
+                                   # arm the responder, build the first map, start the daemon
+```
+
+`cirdan setup` walks you through the whole loop and only proposes what's missing, so
+it's safe to re-run. Two useful flags:
+
+- `cirdan setup --all`     — run every step without prompting (good for scripts / CI)
+- `cirdan setup --system`  — set up machine-level awareness in `~/.cirdan` instead of a repo
+
+That's it — Cirdan is now mapping, watching, and agent-ready. Read on for everything else.
+
 ## Install
 
 **From PyPI (recommended):**
@@ -44,7 +60,7 @@ curl -LsSf https://raw.githubusercontent.com/adanb13/cirdan/main/packaging/insta
 
 These ship a self-contained binary — no Python 3.11+ required. Supported: macOS (arm64), Linux x64/arm64 (glibc), Windows x64. On Intel Macs, Alpine/musl, or other platforms, use the PyPI install above.
 
-**Then set it up in one command:**
+**Then set it up in one command** (see [Quickstart](#quickstart)):
 
 ```bash
 cirdan setup --system     # map + watch your whole machine, agent-ready
@@ -161,8 +177,10 @@ cirdan actions run <action-id> --yes
 cirdan verify <act-record-id>       # did the system actually recover?
 cirdan watch .                      # foreground event stream
 cirdan serve-mcp                    # MCP server over stdio
-cirdan install --project            # guided setup: agents + MCP + responder + map + daemon
-cirdan setup                        # re-run the guided setup, step by step
+cirdan setup                        # set up all of Cirdan: agents + MCP + responder + map + daemon
+cirdan setup --all                  # same, non-interactive (every step, no prompts)
+cirdan setup --system               # set up machine-level scope in ~/.cirdan
+cirdan install --project            # alias for the project-scope guided setup
 ```
 
 ## Always ON
