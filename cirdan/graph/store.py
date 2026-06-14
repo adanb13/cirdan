@@ -14,6 +14,7 @@ from pathlib import Path
 
 import networkx as nx
 
+from cirdan.access.redaction import redact_obj, redact_text
 from cirdan.graph.schema import (
     Confidence,
     Edge,
@@ -85,6 +86,21 @@ CREATE TABLE IF NOT EXISTS kv (
 """
 
 
+def _redact_json_string(value: str) -> str:
+    try:
+        return json.dumps(redact_obj(json.loads(value)), default=str)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return redact_text(value)
+
+
+def _redact_node(node: Node) -> Node:
+    return Node.model_validate(redact_obj(node.model_dump()))
+
+
+def _redact_edge(edge: Edge) -> Edge:
+    return Edge.model_validate(redact_obj(edge.model_dump()))
+
+
 def _node_from_row(row: sqlite3.Row) -> Node:
     return Node(
         id=row["id"],
@@ -142,6 +158,7 @@ class GraphStore:
     # -- nodes -------------------------------------------------------------
 
     def upsert_node(self, node: Node) -> Node:
+        node = _redact_node(node)
         with self._lock:
             row = self._conn.execute("SELECT * FROM nodes WHERE id=?", (node.id,)).fetchone()
             if row:
@@ -161,6 +178,7 @@ class GraphStore:
                 )
             else:
                 merged = node.model_copy(update={"last_seen": now_iso()})
+            merged = _redact_node(merged)
             self._conn.execute(
                 """INSERT OR REPLACE INTO nodes
                    (id, type, name, origin, source_adapter, confidence, evidence, attrs,
@@ -262,7 +280,7 @@ class GraphStore:
                     )
                     gone.append(node.id)
                 elif node.origin == Origin.BOTH:
-                    attrs = {**node.attrs, "live_state": "absent"}
+                    attrs = redact_obj({**node.attrs, "live_state": "absent"})
                     self._conn.execute(
                         "UPDATE nodes SET origin=?, attrs=?, last_seen=? WHERE id=?",
                         (Origin.STATIC.value, json.dumps(attrs, default=str), now_iso(), node.id),
@@ -274,6 +292,7 @@ class GraphStore:
     # -- edges -------------------------------------------------------------
 
     def upsert_edge(self, edge: Edge) -> Edge:
+        edge = _redact_edge(edge)
         with self._lock:
             row = self._conn.execute(
                 "SELECT * FROM edges WHERE source=? AND target=? AND relation=?",
@@ -293,6 +312,7 @@ class GraphStore:
                 )
             else:
                 merged = edge.model_copy(update={"last_seen": now_iso()})
+            merged = _redact_edge(merged)
             self._conn.execute(
                 """INSERT OR REPLACE INTO edges
                    (source, target, relation, confidence, evidence, attrs, first_seen, last_seen)
@@ -354,6 +374,7 @@ class GraphStore:
         return row["value"] if row else default
 
     def kv_set(self, key: str, value: str) -> None:
+        value = _redact_json_string(value)
         with self._lock:
             self._conn.execute("INSERT OR REPLACE INTO kv (key, value) VALUES (?,?)", (key, value))
             self._conn.commit()

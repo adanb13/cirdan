@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field
 
-from cirdan.access.redaction import redact_text
+from cirdan.access.redaction import redact_obj, redact_text
 from cirdan.graph.store import GraphStore
 from cirdan.util import now_iso
 
@@ -90,6 +90,7 @@ class EventStore:
         self.store = store
 
     def add(self, event: Event) -> None:
+        event = Event.model_validate(redact_obj(event.model_dump()))
         with self.store.lock:
             self.store.conn.execute(
                 """INSERT INTO events (ts, source_type, provider, severity, resource, service,

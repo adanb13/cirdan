@@ -6,6 +6,7 @@ import json
 import threading
 from pathlib import Path
 
+from cirdan.access.redaction import redact_obj
 from cirdan.util import now_iso
 
 
@@ -18,6 +19,7 @@ class AuditWriter:
         entry = {"ts": now_iso(), "kind": kind, "summary": summary}
         if details:
             entry["details"] = details
+        entry = redact_obj(entry)
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a") as fh:

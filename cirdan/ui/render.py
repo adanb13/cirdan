@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from cirdan.access.redaction import redact_obj
+from cirdan.access.redaction import redact_obj, redact_text
 from cirdan.ui.view_spec import ViewSpec
 
 _TEMPLATES = Path(__file__).parent / "templates"
@@ -19,7 +19,7 @@ _env = Environment(loader=FileSystemLoader(_TEMPLATES), autoescape=select_autoes
 
 def render_html(spec: ViewSpec) -> str:
     clean = ViewSpec.model_validate(redact_obj(spec.model_dump()))
-    return _env.get_template("view.html.j2").render(spec=clean)
+    return redact_text(_env.get_template("view.html.j2").render(spec=clean))
 
 
 def render_markdown(spec: ViewSpec) -> str:
@@ -63,7 +63,7 @@ def render_markdown(spec: ViewSpec) -> str:
             lines.append("")
         elif c.type in ("AccessReport", "Markdown"):
             lines += ["```", data.get("text", "").rstrip(), "```", ""]
-    return "\n".join(lines) + "\n"
+    return redact_text("\n".join(lines) + "\n")
 
 
 def render_terminal(spec: ViewSpec, console: Console) -> None:

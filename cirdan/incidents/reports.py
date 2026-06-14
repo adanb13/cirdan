@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from cirdan.access.redaction import redact_text
 from cirdan.graph.queries import GraphQueries
 from cirdan.graph.store import GraphStore
 from cirdan.incidents.store import Incident
@@ -79,4 +80,4 @@ def explain_incident(
     if incident.actions:
         lines += ["", "## Actions attempted", ""]
         lines += [f"- {a}" for a in incident.actions]
-    return "\n".join(lines) + "\n"
+    return redact_text("\n".join(lines) + "\n")

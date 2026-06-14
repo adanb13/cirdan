@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import socket
 from collections.abc import AsyncIterator
@@ -214,8 +215,13 @@ class DockerAdapter(Adapter):
                     }
         finally:
             if proc.returncode is None:
-                proc.terminate()
+                with contextlib.suppress(ProcessLookupError):
+                    proc.terminate()
                 try:
-                    await asyncio.wait_for(proc.wait(), timeout=3)
+                    await asyncio.wait_for(proc.communicate(), timeout=3)
                 except asyncio.TimeoutError:
-                    proc.kill()
+                    with contextlib.suppress(ProcessLookupError):
+                        proc.kill()
+                    await proc.communicate()
+            else:
+                await proc.communicate()

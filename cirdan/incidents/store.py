@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from cirdan.access.redaction import redact_obj
 from cirdan.graph.store import GraphStore
 from cirdan.util import now_iso
 
@@ -42,12 +43,13 @@ class IncidentStore:
         self.store = store
 
     def upsert(self, incident: Incident) -> None:
+        clean = Incident.model_validate(redact_obj(incident.model_dump()))
         with self.store.lock:
             self.store.conn.execute(
                 """INSERT OR REPLACE INTO incidents (id, status, severity, started_at, updated_at, data)
                    VALUES (?,?,?,?,?,?)""",
-                (incident.id, incident.status, incident.severity, incident.started_at,
-                 incident.updated_at, incident.model_dump_json()),
+                (clean.id, clean.status, clean.severity, clean.started_at,
+                 clean.updated_at, clean.model_dump_json()),
             )
             self.store.conn.commit()
 
@@ -83,8 +85,9 @@ class IncidentStore:
     def export(self, out_dir: Path) -> None:
         inc_dir = out_dir / "incidents"
         inc_dir.mkdir(parents=True, exist_ok=True)
-        active = [i.model_dump() for i in self.list(include_resolved=False)]
+        active = redact_obj([i.model_dump() for i in self.list(include_resolved=False)])
         (inc_dir / "active.json").write_text(json.dumps(active, indent=2) + "\n")
         with (inc_dir / "history.jsonl").open("w") as fh:
             for incident in self.list(include_resolved=True):
-                fh.write(incident.model_dump_json() + "\n")
+                clean = Incident.model_validate(redact_obj(incident.model_dump()))
+                fh.write(clean.model_dump_json() + "\n")

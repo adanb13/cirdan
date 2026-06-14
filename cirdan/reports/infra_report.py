@@ -181,4 +181,4 @@ def build_infra_report(
     add("---")
     add("Artifacts: `infra.html` (interactive map), `infra.graph.json` (machine-readable graph), "
         "`fingerprint.json`, `access.json`, `runtime-state.json`.")
-    return "\n".join(lines) + "\n"
+    return redact_text("\n".join(lines) + "\n")

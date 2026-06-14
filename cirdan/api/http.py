@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+from cirdan import __version__
 from cirdan.access.redaction import redact_obj, redact_text
 from cirdan.engine import CirdanEngine
 
@@ -30,7 +31,7 @@ def build_app(engine: CirdanEngine, mcp: bool = False):
         else:
             yield
 
-    app = FastAPI(title="cirdan", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="cirdan", version=__version__, lifespan=lifespan)
 
     @app.get("/health")
     def health():
